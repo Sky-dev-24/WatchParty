@@ -37,8 +37,8 @@ RUN npm run build
 # Set production mode
 ENV NODE_ENV=production
 
-# Change ownership
-RUN chown -R nextjs:nodejs /app/.next /app/node_modules
+# Change ownership of entire app directory
+RUN chown -R nextjs:nodejs /app
 
 # Switch to non-root user
 USER nextjs

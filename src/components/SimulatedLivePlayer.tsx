@@ -121,6 +121,18 @@ export default function SimulatedLivePlayer({
     };
   }, [syncPlayer, syncInterval]);
 
+  // Countdown ticker - updates every second while waiting for stream to start
+  useEffect(() => {
+    if (!state || state.isLive || state.hasEnded) return;
+
+    const countdownInterval = setInterval(() => {
+      const currentState = calculateSimuliveState(getSyncedTime(), config);
+      setState(currentState);
+    }, 1000);
+
+    return () => clearInterval(countdownInterval);
+  }, [state, config, getSyncedTime]);
+
   // Handle player ready
   const handleLoadedMetadata = useCallback(() => {
     syncPlayer();

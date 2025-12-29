@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatTime } from "@/lib/simulive";
+import AssetPicker from "@/components/AssetPicker";
 
 interface Stream {
   id: string;
@@ -242,38 +243,6 @@ export default function AdminPage() {
 
               <div>
                 <label className="block text-sm font-medium mb-1">
-                  Mux Asset
-                </label>
-                <select
-                  value={formData.assetId}
-                  onChange={(e) =>
-                    setFormData({ ...formData, assetId: e.target.value })
-                  }
-                  className="w-full bg-gray-800 rounded px-3 py-2"
-                  required
-                >
-                  <option value="">Select an asset...</option>
-                  {assets
-                    .filter((a) => a.status === "ready" && a.playbackId)
-                    .map((asset) => (
-                      <option key={asset.id} value={asset.id}>
-                        {asset.id.slice(0, 8)}... (
-                        {asset.duration
-                          ? formatTime(asset.duration)
-                          : "unknown duration"}
-                        )
-                      </option>
-                    ))}
-                </select>
-                {assets.length === 0 && (
-                  <p className="text-gray-500 text-sm mt-1">
-                    No assets found. Upload videos to your Mux account first.
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-1">
                   Scheduled Start
                 </label>
                 <input
@@ -288,10 +257,24 @@ export default function AdminPage() {
               </div>
             </div>
 
+            {/* Asset Picker */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Select Video Asset
+              </label>
+              <AssetPicker
+                assets={assets}
+                selectedAssetId={formData.assetId}
+                onSelect={(assetId) =>
+                  setFormData({ ...formData, assetId })
+                }
+              />
+            </div>
+
             <div className="flex justify-end">
               <button
                 type="submit"
-                disabled={formLoading}
+                disabled={formLoading || !formData.assetId}
                 className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-6 py-2 rounded-lg font-medium"
               >
                 {formLoading ? "Creating..." : "Create Stream"}

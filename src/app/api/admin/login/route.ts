@@ -20,9 +20,11 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json({ success: true });
 
     // Set auth cookie
+    // Only use secure cookies if explicitly enabled (for HTTPS deployments)
+    const useSecureCookies = process.env.SECURE_COOKIES === "true";
     response.cookies.set(ADMIN_COOKIE_NAME, getAdminCookieValue(), {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: useSecureCookies,
       sameSite: "lax",
       maxAge: COOKIE_MAX_AGE,
       path: "/",

@@ -84,10 +84,16 @@ export default function AdminPage() {
     setFormLoading(true);
 
     try {
+      // Convert local datetime to ISO string (browser interprets datetime-local as local time)
+      const scheduledStartISO = new Date(formData.scheduledStart).toISOString();
+
       const res = await fetch("/api/streams", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          scheduledStart: scheduledStartISO,
+        }),
       });
 
       const data = await res.json();

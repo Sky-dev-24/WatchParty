@@ -6,7 +6,7 @@ services:
     container_name: simulive-stream
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:3000"
     environment:
       # Mux API Credentials (required)
       - MUX_TOKEN_ID=${MUX_TOKEN_ID}

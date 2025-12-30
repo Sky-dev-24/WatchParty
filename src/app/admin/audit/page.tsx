@@ -133,10 +133,17 @@ export default function AuditLogPage() {
               className="bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
             >
               <option value="">All Events</option>
-              <option value="LOGIN_SUCCESS">Login Success</option>
-              <option value="LOGIN_FAILED">Login Failed</option>
-              <option value="LOGIN_RATE_LIMITED">Rate Limited</option>
-              <option value="LOGOUT">Logout</option>
+              <optgroup label="Authentication">
+                <option value="LOGIN_SUCCESS">Login Success</option>
+                <option value="LOGIN_FAILED">Login Failed</option>
+                <option value="LOGIN_RATE_LIMITED">Rate Limited</option>
+                <option value="LOGOUT">Logout</option>
+              </optgroup>
+              <optgroup label="Streams">
+                <option value="STREAM_CREATED">Stream Created</option>
+                <option value="STREAM_UPDATED">Stream Updated</option>
+                <option value="STREAM_DELETED">Stream Deleted</option>
+              </optgroup>
             </select>
           </div>
           <div>
@@ -172,7 +179,7 @@ export default function AuditLogPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
         <div className="bg-gray-800 rounded-lg p-4">
           <div className="text-2xl font-bold">{total}</div>
           <div className="text-sm text-gray-400">Total Events</div>
@@ -181,19 +188,31 @@ export default function AuditLogPage() {
           <div className="text-2xl font-bold text-green-400">
             {logs.filter(l => l.event === "LOGIN_SUCCESS").length}
           </div>
-          <div className="text-sm text-gray-400">Successful (this page)</div>
+          <div className="text-sm text-gray-400">Logins (page)</div>
         </div>
         <div className="bg-gray-800 rounded-lg p-4">
           <div className="text-2xl font-bold text-red-400">
             {logs.filter(l => l.event === "LOGIN_FAILED").length}
           </div>
-          <div className="text-sm text-gray-400">Failed (this page)</div>
+          <div className="text-sm text-gray-400">Failed (page)</div>
         </div>
         <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-2xl font-bold text-yellow-400">
-            {logs.filter(l => l.event === "LOGIN_RATE_LIMITED").length}
+          <div className="text-2xl font-bold text-blue-400">
+            {logs.filter(l => l.event === "STREAM_CREATED").length}
           </div>
-          <div className="text-sm text-gray-400">Rate Limited (this page)</div>
+          <div className="text-sm text-gray-400">Created (page)</div>
+        </div>
+        <div className="bg-gray-800 rounded-lg p-4">
+          <div className="text-2xl font-bold text-cyan-400">
+            {logs.filter(l => l.event === "STREAM_UPDATED").length}
+          </div>
+          <div className="text-sm text-gray-400">Updated (page)</div>
+        </div>
+        <div className="bg-gray-800 rounded-lg p-4">
+          <div className="text-2xl font-bold text-orange-400">
+            {logs.filter(l => l.event === "STREAM_DELETED").length}
+          </div>
+          <div className="text-sm text-gray-400">Deleted (page)</div>
         </div>
       </div>
 
@@ -255,7 +274,10 @@ export default function AuditLogPage() {
                       <td className="px-4 py-3 text-sm text-gray-400">
                         {log.details ? (
                           <span className="text-yellow-400">
-                            {log.details.reason as string || JSON.stringify(log.details)}
+                            {log.details.reason as string ||
+                             log.details.title as string ||
+                             (log.details.changes ? `Changed: ${(log.details.changes as string[]).join(", ")}` : null) ||
+                             JSON.stringify(log.details)}
                           </span>
                         ) : (
                           <span className="text-gray-600">—</span>

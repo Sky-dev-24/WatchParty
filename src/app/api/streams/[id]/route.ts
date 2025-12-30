@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import { isApiAuthenticated } from "@/lib/auth";
+import { isApiAuthenticated, getClientIp } from "@/lib/auth";
 import { deleteCached } from "@/lib/redis";
+import { logStreamUpdated, logStreamDeleted } from "@/lib/audit";
 
 const STREAMS_CACHE_KEY = "streams:all";
 
@@ -82,6 +83,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       data: updateData,
     });
 
+    // Log stream update
+    const clientIp = getClientIp(request);
+    const userAgent = request.headers.get("user-agent") || undefined;
+    await logStreamUpdated(clientIp, userAgent, {
+      id: stream.id,
+      title: stream.title,
+      changes: Object.keys(updateData),
+    });
+
     // Invalidate cache after update
     await invalidateStreamsCache();
 
@@ -103,8 +113,23 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
   try {
     const { id } = await params;
+
+    // Get stream info before deletion for logging
+    const stream = await prisma.stream.findUnique({ where: { id } });
+    if (!stream) {
+      return NextResponse.json({ error: "Stream not found" }, { status: 404 });
+    }
+
     await prisma.stream.delete({
       where: { id },
+    });
+
+    // Log stream deletion
+    const clientIp = getClientIp(request);
+    const userAgent = request.headers.get("user-agent") || undefined;
+    await logStreamDeleted(clientIp, userAgent, {
+      id: stream.id,
+      title: stream.title,
     });
 
     // Invalidate cache after delete

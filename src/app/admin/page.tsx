@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { formatTime } from "@/lib/simulive";
 import AssetPicker from "@/components/AssetPicker";
+import DateTimePicker from "@/components/DateTimePicker";
 
 interface Stream {
   id: string;
@@ -186,6 +188,12 @@ export default function AdminPage() {
           >
             {showForm ? "Cancel" : "+ New Stream"}
           </button>
+          <Link
+            href="/admin/audit"
+            className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg font-medium text-gray-300"
+          >
+            Audit Logs
+          </Link>
           <button
             onClick={handleLogout}
             className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg font-medium text-gray-300"
@@ -242,20 +250,19 @@ export default function AdminPage() {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Scheduled Start
-                </label>
-                <input
-                  type="datetime-local"
-                  value={formData.scheduledStart}
-                  onChange={(e) =>
-                    setFormData({ ...formData, scheduledStart: e.target.value })
-                  }
-                  className="w-full bg-gray-800 rounded px-3 py-2"
-                  required
-                />
-              </div>
+            </div>
+
+            {/* Date/Time Picker */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Scheduled Start
+              </label>
+              <DateTimePicker
+                value={formData.scheduledStart}
+                onChange={(value) =>
+                  setFormData({ ...formData, scheduledStart: value })
+                }
+              />
             </div>
 
             {/* Asset Picker */}

@@ -115,6 +115,57 @@ export async function logLogout(
 }
 
 /**
+ * Log a stream created event
+ */
+export async function logStreamCreated(
+  ipAddress: string,
+  userAgent?: string,
+  streamDetails?: { id: string; title: string; slug: string }
+): Promise<void> {
+  await logAuditEvent({
+    event: AuditEvent.STREAM_CREATED,
+    severity: Severity.INFO,
+    ipAddress,
+    userAgent,
+    details: streamDetails,
+  });
+}
+
+/**
+ * Log a stream updated event
+ */
+export async function logStreamUpdated(
+  ipAddress: string,
+  userAgent?: string,
+  streamDetails?: { id: string; title?: string; changes: string[] }
+): Promise<void> {
+  await logAuditEvent({
+    event: AuditEvent.STREAM_UPDATED,
+    severity: Severity.INFO,
+    ipAddress,
+    userAgent,
+    details: streamDetails,
+  });
+}
+
+/**
+ * Log a stream deleted event
+ */
+export async function logStreamDeleted(
+  ipAddress: string,
+  userAgent?: string,
+  streamDetails?: { id: string; title: string }
+): Promise<void> {
+  await logAuditEvent({
+    event: AuditEvent.STREAM_DELETED,
+    severity: Severity.WARN,
+    ipAddress,
+    userAgent,
+    details: streamDetails,
+  });
+}
+
+/**
  * Get recent audit logs with optional filtering
  */
 export async function getAuditLogs(options?: {

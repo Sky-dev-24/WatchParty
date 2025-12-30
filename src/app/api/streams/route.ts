@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getAssetInfo } from "@/lib/mux";
-import { isApiAuthenticated } from "@/lib/auth";
+import { isApiAuthenticated, getClientIp } from "@/lib/auth";
 import { getCached, setCached, deleteCached } from "@/lib/redis";
+import { logStreamCreated } from "@/lib/audit";
 
 const STREAMS_CACHE_KEY = "streams:all";
 const STREAMS_CACHE_TTL = 30; // 30 seconds
@@ -118,6 +119,15 @@ export async function POST(request: NextRequest) {
         driftTolerance: driftTolerance || 2,
         isActive: false,
       },
+    });
+
+    // Log stream creation
+    const clientIp = getClientIp(request);
+    const userAgent = request.headers.get("user-agent") || undefined;
+    await logStreamCreated(clientIp, userAgent, {
+      id: stream.id,
+      title: stream.title,
+      slug: stream.slug,
     });
 
     // Invalidate cache after creating stream

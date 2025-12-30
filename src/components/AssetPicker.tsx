@@ -21,9 +21,9 @@ interface AssetPickerProps {
 
 interface TokenCache {
   [playbackId: string]: {
-    video?: string;
-    thumbnail?: string;
-    storyboard?: string;
+    "playback-token"?: string;
+    "thumbnail-token"?: string;
+    "storyboard-token"?: string;
   };
 }
 
@@ -74,8 +74,8 @@ export default function AssetPicker({
   const getThumbnailUrl = (asset: MuxAsset) => {
     if (!asset.playbackId) return null;
     const baseUrl = `https://image.mux.com/${asset.playbackId}/thumbnail.jpg?width=320&height=180&fit_mode=smartcrop`;
-    if (asset.playbackPolicy === "signed" && tokens[asset.playbackId]?.thumbnail) {
-      return `${baseUrl}&token=${tokens[asset.playbackId].thumbnail}`;
+    if (asset.playbackPolicy === "signed" && tokens[asset.playbackId]?.["thumbnail-token"]) {
+      return `${baseUrl}&token=${tokens[asset.playbackId]["thumbnail-token"]}`;
     }
     // For signed assets without token yet, return null to show loading state
     if (asset.playbackPolicy === "signed") {
@@ -124,7 +124,11 @@ export default function AssetPicker({
                 playbackId={previewAsset.playbackId}
                 tokens={
                   previewAsset.playbackPolicy === "signed" && tokens[previewAsset.playbackId]
-                    ? tokens[previewAsset.playbackId]
+                    ? {
+                        playback: tokens[previewAsset.playbackId]["playback-token"],
+                        thumbnail: tokens[previewAsset.playbackId]["thumbnail-token"],
+                        storyboard: tokens[previewAsset.playbackId]["storyboard-token"],
+                      }
                     : undefined
                 }
                 autoPlay

@@ -67,8 +67,12 @@ export async function listAssets() {
     createdAt: string;
   }[] = [];
 
+  let pageNumber = 1;
+
   // Fetch first page
   let page = await mux.video.assets.list({ limit: 100 });
+
+  console.log(`[Mux] Page ${pageNumber}: fetched ${page.data.length} assets, hasNextPage: ${page.hasNextPage()}`);
 
   // Process first page
   for (const asset of page.data) {
@@ -86,7 +90,10 @@ export async function listAssets() {
 
   // Fetch remaining pages
   while (page.hasNextPage()) {
+    pageNumber++;
     page = await page.getNextPage();
+    console.log(`[Mux] Page ${pageNumber}: fetched ${page.data.length} assets, hasNextPage: ${page.hasNextPage()}`);
+
     for (const asset of page.data) {
       const publicPlayback = asset.playback_ids?.find(
         (p) => p.policy === "public"
@@ -101,7 +108,7 @@ export async function listAssets() {
     }
   }
 
-  console.log(`Fetched ${allAssets.length} total assets from Mux`);
+  console.log(`[Mux] Total: fetched ${allAssets.length} assets across ${pageNumber} pages`);
   return allAssets;
 }
 

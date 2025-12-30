@@ -119,7 +119,8 @@ export async function listAssets(
       playbackPolicy: playback?.policy || null,
       duration: asset.duration || null,
       status: asset.status,
-      createdAt: asset.created_at,
+      // Convert Unix seconds to ISO string for proper date parsing
+      createdAt: new Date(Number(asset.created_at) * 1000).toISOString(),
     };
   });
 

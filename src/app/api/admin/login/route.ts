@@ -7,14 +7,23 @@ import {
   COOKIE_MAX_AGE,
 } from "@/lib/auth";
 import { checkLoginRateLimit, resetLoginRateLimit } from "@/lib/redis";
+import {
+  logFailedLogin,
+  logSuccessfulLogin,
+  logRateLimitedLogin,
+} from "@/lib/audit";
 
 export async function POST(request: NextRequest) {
   const clientIp = getClientIp(request);
+  const userAgent = request.headers.get("user-agent") || undefined;
 
   // Check rate limit BEFORE processing login
   const rateLimit = await checkLoginRateLimit(clientIp);
 
   if (!rateLimit.allowed) {
+    // Log rate-limited attempt
+    await logRateLimitedLogin(clientIp, userAgent, rateLimit.retryAfterSeconds);
+
     return NextResponse.json(
       {
         error: "Too many login attempts. Please try again later.",
@@ -33,6 +42,7 @@ export async function POST(request: NextRequest) {
     const { password } = await request.json();
 
     if (!password || typeof password !== "string") {
+      await logFailedLogin(clientIp, userAgent, "Missing password");
       return NextResponse.json(
         { error: "Password is required" },
         { status: 400 }
@@ -40,6 +50,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (!verifyAdminPassword(password)) {
+      // Log failed login attempt
+      await logFailedLogin(clientIp, userAgent, "Invalid password");
+
       return NextResponse.json(
         {
           error: "Invalid password",
@@ -53,6 +66,7 @@ export async function POST(request: NextRequest) {
     const sessionToken = await createAdminSession();
 
     if (!sessionToken) {
+      await logFailedLogin(clientIp, userAgent, "Session creation failed");
       return NextResponse.json(
         { error: "Failed to create session. Please try again." },
         { status: 500 }
@@ -61,6 +75,9 @@ export async function POST(request: NextRequest) {
 
     // Reset rate limit on successful login
     await resetLoginRateLimit(clientIp);
+
+    // Log successful login
+    await logSuccessfulLogin(clientIp, userAgent);
 
     const response = NextResponse.json({ success: true });
 
@@ -76,6 +93,7 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch {
+    await logFailedLogin(clientIp, userAgent, "Invalid request format");
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 }

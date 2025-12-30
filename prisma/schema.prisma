@@ -37,3 +37,24 @@ model Stream {
   @@index([scheduledStart])
   @@index([isActive, scheduledStart])
 }
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  timestamp DateTime @default(now())
+
+  // Event details
+  event     String   // e.g., "LOGIN_SUCCESS", "LOGIN_FAILED", "LOGIN_RATE_LIMITED"
+  severity  String   @default("INFO") // "INFO", "WARN", "ERROR"
+
+  // Request context
+  ipAddress String?
+  userAgent String?
+
+  // Additional data (JSON)
+  details   String?  // JSON string for flexible additional data
+
+  // Indexes for querying
+  @@index([event])
+  @@index([timestamp])
+  @@index([ipAddress])
+}

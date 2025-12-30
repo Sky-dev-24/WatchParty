@@ -99,8 +99,8 @@ export default async function Home() {
         </section>
       )}
 
-      {/* No streams */}
-      {streams.length === 0 && (
+      {/* No streams - show when no live or upcoming streams */}
+      {liveStreams.length === 0 && upcomingStreams.length === 0 && (
         <div className="bg-gray-900 rounded-lg p-12 text-center">
           <h2 className="text-xl font-semibold mb-2">No Active Streams</h2>
           <p className="text-gray-400">Check back later for upcoming broadcasts.</p>

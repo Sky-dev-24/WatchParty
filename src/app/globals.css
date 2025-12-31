@@ -40,6 +40,11 @@
   justify-content: center;
   background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #0f0f1a 100%);
   animation: fadeIn 0.3s ease-out;
+  transition: opacity 1s ease-in-out;
+}
+
+.overlay-state.fade-out {
+  opacity: 0;
 }
 
 @keyframes fadeIn {

@@ -67,6 +67,9 @@ export default function SimulatedLivePlayer({
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [showBadge, setShowBadge] = useState(true);
   const [playerReady, setPlayerReady] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [showCountdownOverlay, setShowCountdownOverlay] = useState(true);
+  const prevIsLiveRef = useRef(false);
 
   const config: SimuliveConfig = {
     scheduledStart,
@@ -236,19 +239,36 @@ export default function SimulatedLivePlayer({
     };
   }, [resetBadgeTimer]);
 
+  // Detect transition from countdown to live
+  useEffect(() => {
+    if (state?.isLive && !prevIsLiveRef.current) {
+      // Just went live - start fade transition
+      setIsTransitioning(true);
+      setTimeout(() => {
+        setShowCountdownOverlay(false);
+        setIsTransitioning(false);
+      }, 1000); // Match CSS transition duration
+    }
+    prevIsLiveRef.current = state?.isLive || false;
+  }, [state?.isLive]);
+
   const showCountdown = state && !state.isLive && state.secondsUntilStart > 0;
   const showEnded = state?.hasEnded;
   const showPlayer = state?.isLive;
 
-  // Countdown values
-  const countdown = showCountdown && state ? formatCountdown(state.secondsUntilStart) : null;
-  const isStartingSoon = countdown && state && state.secondsUntilStart <= 60;
+  // Countdown values - keep last values during transition
+  const countdownRef = useRef<{ days: number; hours: number; minutes: number; secs: number } | null>(null);
+  if (showCountdown && state) {
+    countdownRef.current = formatCountdown(state.secondsUntilStart);
+  }
+  const countdown = countdownRef.current;
+  const isStartingSoon = state && state.secondsUntilStart <= 60;
 
   return (
     <div className="simulive-container" ref={containerRef}>
       {/* Countdown overlay */}
-      {showCountdown && countdown && (
-        <div className={`overlay-state countdown-overlay ${isStartingSoon ? 'starting-soon' : ''}`}>
+      {(showCountdown || isTransitioning) && showCountdownOverlay && (
+        <div className={`overlay-state countdown-overlay ${isStartingSoon ? 'starting-soon' : ''} ${isTransitioning ? 'fade-out' : ''}`}>
           {/* Background animations */}
           <div className="countdown-bg" />
 
@@ -285,12 +305,16 @@ export default function SimulatedLivePlayer({
 
             {/* Countdown display */}
             <div className="countdown-timer">
-              {countdown.days > 0 && (
+              {countdown && countdown.days > 0 && (
                 <CountdownUnit value={countdown.days} label="days" />
               )}
-              <CountdownUnit value={countdown.hours} label="hrs" />
-              <CountdownUnit value={countdown.minutes} label="min" />
-              <CountdownUnit value={countdown.secs} label="sec" />
+              {countdown && (
+                <>
+                  <CountdownUnit value={countdown.hours} label="hrs" />
+                  <CountdownUnit value={countdown.minutes} label="min" />
+                  <CountdownUnit value={countdown.secs} label="sec" />
+                </>
+              )}
             </div>
 
             {/* Scheduled time */}

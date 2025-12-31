@@ -61,25 +61,70 @@ export default function SimulatedLivePlayer({
     driftTolerance,
   };
 
-  // Calculate server time offset on mount
-  useEffect(() => {
-    async function calibrateTime() {
-      try {
-        const before = Date.now();
-        const serverTime = await fetchServerTime();
-        const after = Date.now();
-        const latency = (after - before) / 2;
-        // Offset = how much to add to local time to get server time
-        const offset = serverTime - (before + latency);
-        setServerTimeOffset(offset);
-      } catch (error) {
-        console.error("Failed to fetch server time:", error);
-        // Fall back to local time if server time unavailable
-        setServerTimeOffset(0);
-      }
+  // Track last sync time for clock jump detection
+  const lastSyncTimeRef = useRef<number>(Date.now());
+  const expectedElapsedRef = useRef<number>(0);
+
+  // Calibrate server time offset
+  const calibrateTime = useCallback(async () => {
+    try {
+      const serverTime = await fetchServerTime();
+      const now = Date.now();
+      // Offset = how much to add to local time to get server time
+      const offset = serverTime - now;
+      setServerTimeOffset(offset);
+      lastSyncTimeRef.current = now;
+      expectedElapsedRef.current = 0;
+    } catch (error) {
+      console.error("Failed to fetch server time:", error);
+      // Fall back to local time if server time unavailable
+      setServerTimeOffset(0);
     }
-    calibrateTime();
   }, []);
+
+  // Initial calibration on mount
+  useEffect(() => {
+    calibrateTime();
+  }, [calibrateTime]);
+
+  // Periodic recalibration every 60 seconds
+  useEffect(() => {
+    const recalibrationInterval = setInterval(() => {
+      calibrateTime();
+    }, 60000);
+
+    return () => clearInterval(recalibrationInterval);
+  }, [calibrateTime]);
+
+  // Recalibrate on tab visibility change
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        // Tab became visible, recalibrate time
+        calibrateTime();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [calibrateTime]);
+
+  // Detect clock jumps (system time changed)
+  useEffect(() => {
+    const clockCheckInterval = setInterval(() => {
+      const now = Date.now();
+      const actualElapsed = now - lastSyncTimeRef.current;
+      expectedElapsedRef.current += 5000; // Check runs every 5 seconds
+
+      // If elapsed time differs by more than 2 seconds from expected, clock probably jumped
+      if (Math.abs(actualElapsed - expectedElapsedRef.current) > 2000) {
+        console.log("Clock jump detected, recalibrating...");
+        calibrateTime();
+      }
+    }, 5000);
+
+    return () => clearInterval(clockCheckInterval);
+  }, [calibrateTime]);
 
   // Fetch tokens for signed playback
   useEffect(() => {

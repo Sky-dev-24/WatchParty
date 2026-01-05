@@ -360,7 +360,7 @@ export default function SimulatedLivePlayer({
   const isStartingSoon = state && state.secondsUntilStart <= 60;
 
   return (
-    <div className="simulive-container" ref={containerRef}>
+    <div className={`simulive-container ${embedded ? 'embedded' : ''}`} ref={containerRef}>
       {/* Countdown overlay */}
       {(showCountdown || isTransitioning) && showCountdownOverlay && (
         <div className={`overlay-state countdown-overlay ${isStartingSoon ? 'starting-soon' : ''} ${isTransitioning ? 'fade-out' : ''}`}>

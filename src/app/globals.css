@@ -27,6 +27,11 @@
   aspect-ratio: 16 / 9;
 }
 
+.simulive-container.embedded {
+  border-radius: 0;
+  max-width: none;
+}
+
 /* ============================================
    Overlay States (shared)
    ============================================ */

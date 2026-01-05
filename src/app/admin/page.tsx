@@ -37,6 +37,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [embedModal, setEmbedModal] = useState<Stream | null>(null);
 
   // Logout handler
   async function handleLogout() {
@@ -364,6 +365,12 @@ export default function AdminPage() {
                     Preview
                   </a>
                   <button
+                    onClick={() => setEmbedModal(stream)}
+                    className="bg-purple-600 hover:bg-purple-700 px-3 py-2 rounded text-sm"
+                  >
+                    Embed
+                  </button>
+                  <button
                     onClick={() => toggleActive(stream)}
                     className={`px-3 py-2 rounded text-sm ${
                       stream.isActive
@@ -385,6 +392,57 @@ export default function AdminPage() {
           })
         )}
       </div>
+
+      {/* Embed Code Modal */}
+      {embedModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-lg p-6 max-w-2xl w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Embed Code</h2>
+              <button
+                onClick={() => setEmbedModal(null)}
+                className="text-gray-400 hover:text-white text-2xl"
+              >
+                &times;
+              </button>
+            </div>
+            <p className="text-gray-400 text-sm mb-4">
+              Copy this code to embed &ldquo;{embedModal.title}&rdquo; on your website:
+            </p>
+            <div className="bg-gray-800 rounded p-4 font-mono text-sm overflow-x-auto">
+              <code className="text-green-400 whitespace-pre-wrap break-all">
+{`<iframe
+  src="${typeof window !== "undefined" ? window.location.origin : ""}/embed/${embedModal.slug}"
+  width="640"
+  height="360"
+  frameborder="0"
+  allowfullscreen
+  allow="autoplay; fullscreen"
+></iframe>`}
+              </code>
+            </div>
+            <div className="flex gap-3 mt-4">
+              <button
+                onClick={() => {
+                  const embedCode = `<iframe src="${window.location.origin}/embed/${embedModal.slug}" width="640" height="360" frameborder="0" allowfullscreen allow="autoplay; fullscreen"></iframe>`;
+                  navigator.clipboard.writeText(embedCode);
+                  alert("Embed code copied to clipboard!");
+                }}
+                className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-medium"
+              >
+                Copy to Clipboard
+              </button>
+              <a
+                href={`/embed/${embedModal.slug}`}
+                target="_blank"
+                className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded font-medium"
+              >
+                Preview Embed
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

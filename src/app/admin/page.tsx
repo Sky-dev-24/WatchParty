@@ -7,17 +7,26 @@ import { formatTime } from "@/lib/simulive";
 import AssetPicker from "@/components/AssetPicker";
 import DateTimePicker from "@/components/DateTimePicker";
 
+interface PlaylistItem {
+  id: string;
+  assetId: string;
+  playbackId: string;
+  playbackPolicy: string;
+  duration: number;
+  order: number;
+}
+
 interface Stream {
   id: string;
   slug: string;
   title: string;
-  assetId: string;
-  playbackId: string;
-  duration: number;
   scheduledStart: string;
   isActive: boolean;
   syncInterval: number;
   driftTolerance: number;
+  endedAt: string | null;
+  loopCount: number;
+  items: PlaylistItem[];
 }
 
 interface MuxAsset {
@@ -38,6 +47,14 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [embedModal, setEmbedModal] = useState<Stream | null>(null);
+  const [embedSize, setEmbedSize] = useState<"small" | "medium" | "large" | "xl">("medium");
+
+  const embedSizes = {
+    small: { width: 480, height: 270 },
+    medium: { width: 640, height: 360 },
+    large: { width: 854, height: 480 },
+    xl: { width: 1280, height: 720 },
+  };
 
   // Logout handler
   async function handleLogout() {
@@ -50,8 +67,9 @@ export default function AdminPage() {
   const [formData, setFormData] = useState({
     slug: "",
     title: "",
-    assetId: "",
+    assetIds: [] as string[],
     scheduledStart: "",
+    loopCount: 1,
   });
   const [formError, setFormError] = useState<string | null>(null);
   const [formLoading, setFormLoading] = useState(false);
@@ -97,8 +115,11 @@ export default function AdminPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...formData,
+          slug: formData.slug,
+          title: formData.title,
+          assetIds: formData.assetIds,
           scheduledStart: scheduledStartISO,
+          loopCount: formData.loopCount,
         }),
       });
 
@@ -110,7 +131,7 @@ export default function AdminPage() {
 
       setStreams([data, ...streams]);
       setShowForm(false);
-      setFormData({ slug: "", title: "", assetId: "", scheduledStart: "" });
+      setFormData({ slug: "", title: "", assetIds: [], scheduledStart: "", loopCount: 1 });
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Failed to create");
     } finally {
@@ -133,6 +154,44 @@ export default function AdminPage() {
       setStreams(streams.map((s) => (s.id === stream.id ? updated : s)));
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to update");
+    }
+  }
+
+  // Stop stream for all viewers
+  async function stopStream(stream: Stream) {
+    if (!confirm(`Stop "${stream.title}" for all viewers? This will immediately end the broadcast.`)) return;
+
+    try {
+      const res = await fetch(`/api/streams/${stream.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endedAt: new Date().toISOString() }),
+      });
+
+      if (!res.ok) throw new Error("Failed to stop stream");
+
+      const updated = await res.json();
+      setStreams(streams.map((s) => (s.id === stream.id ? updated : s)));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to stop stream");
+    }
+  }
+
+  // Resume a stopped stream
+  async function resumeStream(stream: Stream) {
+    try {
+      const res = await fetch(`/api/streams/${stream.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endedAt: null }),
+      });
+
+      if (!res.ok) throw new Error("Failed to resume stream");
+
+      const updated = await res.json();
+      setStreams(streams.map((s) => (s.id === stream.id ? updated : s)));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to resume stream");
     }
   }
 
@@ -267,24 +326,74 @@ export default function AdminPage() {
               />
             </div>
 
-            {/* Asset Picker */}
+            {/* Asset Picker - Multiple Selection */}
             <div>
               <label className="block text-sm font-medium mb-2">
-                Select Video Asset
+                Select Video Assets (Playlist)
               </label>
               <AssetPicker
                 assets={assets}
-                selectedAssetId={formData.assetId}
-                onSelect={(assetId) =>
-                  setFormData({ ...formData, assetId })
-                }
+                selectedAssetId={formData.assetIds[formData.assetIds.length - 1] || ""}
+                onSelect={(assetId) => {
+                  if (!formData.assetIds.includes(assetId)) {
+                    setFormData({ ...formData, assetIds: [...formData.assetIds, assetId] });
+                  }
+                }}
               />
+              {formData.assetIds.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-sm text-gray-400">Playlist order:</p>
+                  {formData.assetIds.map((id, index) => {
+                    const asset = assets.find(a => a.id === id);
+                    return (
+                      <div key={id} className="flex items-center gap-2 bg-gray-800 rounded px-3 py-2">
+                        <span className="text-gray-500 w-6">{index + 1}.</span>
+                        <span className="flex-1 truncate">{asset?.title || id}</span>
+                        <span className="text-gray-500 text-sm">
+                          {asset?.duration ? formatTime(asset.duration) : ""}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setFormData({
+                            ...formData,
+                            assetIds: formData.assetIds.filter((_, i) => i !== index)
+                          })}
+                          className="text-red-400 hover:text-red-300"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Loop Count */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Loop Count (1-10)
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={formData.loopCount}
+                onChange={(e) => setFormData({
+                  ...formData,
+                  loopCount: Math.min(10, Math.max(1, parseInt(e.target.value) || 1))
+                })}
+                className="w-24 bg-gray-800 rounded px-3 py-2"
+              />
+              <p className="text-sm text-gray-500 mt-1">
+                Playlist will play {formData.loopCount} time{formData.loopCount > 1 ? "s" : ""}
+              </p>
             </div>
 
             <div className="flex justify-end">
               <button
                 type="submit"
-                disabled={formLoading || !formData.assetId}
+                disabled={formLoading || formData.assetIds.length === 0}
                 className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-6 py-2 rounded-lg font-medium"
               >
                 {formLoading ? "Creating..." : "Create Stream"}
@@ -304,12 +413,16 @@ export default function AdminPage() {
           streams.map((stream) => {
             const scheduledDate = new Date(stream.scheduledStart);
             const now = new Date();
+            const isStopped = !!stream.endedAt;
+            const playlistDuration = stream.items.reduce((sum, item) => sum + item.duration, 0);
+            const totalDuration = playlistDuration * stream.loopCount;
             const isLive =
               stream.isActive &&
+              !isStopped &&
               now >= scheduledDate &&
-              now.getTime() - scheduledDate.getTime() < stream.duration * 1000;
+              now.getTime() - scheduledDate.getTime() < totalDuration * 1000;
             const hasEnded =
-              now.getTime() - scheduledDate.getTime() >= stream.duration * 1000;
+              isStopped || now.getTime() - scheduledDate.getTime() >= totalDuration * 1000;
 
             return (
               <div
@@ -329,7 +442,12 @@ export default function AdminPage() {
                         SCHEDULED
                       </span>
                     )}
-                    {hasEnded && (
+                    {isStopped && (
+                      <span className="bg-orange-600 text-white text-xs px-2 py-1 rounded font-medium">
+                        STOPPED
+                      </span>
+                    )}
+                    {hasEnded && !isStopped && (
                       <span className="bg-gray-600 text-white text-xs px-2 py-1 rounded font-medium">
                         ENDED
                       </span>
@@ -351,7 +469,17 @@ export default function AdminPage() {
                     </p>
                     <p>
                       <span className="text-gray-500">Duration:</span>{" "}
-                      {formatTime(stream.duration)}
+                      {formatTime(totalDuration)}
+                      {stream.loopCount > 1 && (
+                        <span className="text-gray-500 ml-1">
+                          ({stream.items.length} video{stream.items.length > 1 ? "s" : ""} × {stream.loopCount} loops)
+                        </span>
+                      )}
+                      {stream.loopCount === 1 && stream.items.length > 1 && (
+                        <span className="text-gray-500 ml-1">
+                          ({stream.items.length} videos)
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -370,6 +498,22 @@ export default function AdminPage() {
                   >
                     Embed
                   </button>
+                  {isLive && !isStopped && (
+                    <button
+                      onClick={() => stopStream(stream)}
+                      className="bg-orange-600 hover:bg-orange-700 px-3 py-2 rounded text-sm"
+                    >
+                      Stop
+                    </button>
+                  )}
+                  {isStopped && (
+                    <button
+                      onClick={() => resumeStream(stream)}
+                      className="bg-green-600 hover:bg-green-700 px-3 py-2 rounded text-sm"
+                    >
+                      Resume
+                    </button>
+                  )}
                   <button
                     onClick={() => toggleActive(stream)}
                     className={`px-3 py-2 rounded text-sm ${
@@ -409,12 +553,30 @@ export default function AdminPage() {
             <p className="text-gray-400 text-sm mb-4">
               Copy this code to embed &ldquo;{embedModal.title}&rdquo; on your website:
             </p>
+            <div className="flex gap-2 mb-4">
+              {(["small", "medium", "large", "xl"] as const).map((size) => (
+                <button
+                  key={size}
+                  onClick={() => setEmbedSize(size)}
+                  className={`px-3 py-1.5 rounded text-sm font-medium ${
+                    embedSize === size
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                  }`}
+                >
+                  {size === "xl" ? "XL" : size.charAt(0).toUpperCase() + size.slice(1)}
+                  <span className="text-xs ml-1 opacity-70">
+                    {embedSizes[size].width}x{embedSizes[size].height}
+                  </span>
+                </button>
+              ))}
+            </div>
             <div className="bg-gray-800 rounded p-4 font-mono text-sm overflow-x-auto">
               <code className="text-green-400 whitespace-pre-wrap break-all">
 {`<iframe
   src="${typeof window !== "undefined" ? window.location.origin : ""}/embed/${embedModal.slug}"
-  width="640"
-  height="360"
+  width="${embedSizes[embedSize].width}"
+  height="${embedSizes[embedSize].height}"
   frameborder="0"
   allowfullscreen
   allow="autoplay; fullscreen"
@@ -424,7 +586,8 @@ export default function AdminPage() {
             <div className="flex gap-3 mt-4">
               <button
                 onClick={() => {
-                  const embedCode = `<iframe src="${window.location.origin}/embed/${embedModal.slug}" width="640" height="360" frameborder="0" allowfullscreen allow="autoplay; fullscreen"></iframe>`;
+                  const { width, height } = embedSizes[embedSize];
+                  const embedCode = `<iframe src="${window.location.origin}/embed/${embedModal.slug}" width="${width}" height="${height}" frameborder="0" allowfullscreen allow="autoplay; fullscreen"></iframe>`;
                   navigator.clipboard.writeText(embedCode);
                   alert("Embed code copied to clipboard!");
                 }}

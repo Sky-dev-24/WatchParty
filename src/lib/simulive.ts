@@ -3,13 +3,24 @@
  *
  * Core logic for synchronizing all viewers to the same position
  * in a pre-recorded video to simulate a live broadcast.
+ * Supports playlists (multiple videos) and looping.
  */
+
+export interface PlaylistItem {
+  id: string;
+  playbackId: string;
+  playbackPolicy: string;
+  duration: number;
+  order: number;
+}
 
 export interface SimuliveConfig {
   /** The scheduled start time of the "broadcast" (ISO 8601 string or Date) */
   scheduledStart: string | Date;
-  /** Total duration of the video in seconds */
-  videoDuration: number;
+  /** Playlist items in order */
+  items: PlaylistItem[];
+  /** Number of times to loop the playlist (1-10) */
+  loopCount: number;
   /** How often to re-sync the player position (ms) */
   syncInterval?: number;
   /** Tolerance in seconds before forcing a resync */
@@ -21,17 +32,31 @@ export interface SimuliveState {
   isLive: boolean;
   /** Whether the broadcast has ended */
   hasEnded: boolean;
-  /** Current position in the video (seconds) */
+  /** Current position in the current video (seconds) */
   currentPosition: number;
   /** Seconds until broadcast starts (negative if already started) */
   secondsUntilStart: number;
-  /** Seconds remaining in broadcast */
+  /** Seconds remaining in entire broadcast */
   secondsRemaining: number;
+  /** Current playlist item index (0-based) */
+  currentItemIndex: number;
+  /** Current loop number (1-based) */
+  currentLoop: number;
+  /** Total duration of entire broadcast (all loops) */
+  totalDuration: number;
+}
+
+/**
+ * Calculate total duration of playlist (single pass)
+ */
+export function getPlaylistDuration(items: PlaylistItem[]): number {
+  return items.reduce((sum, item) => sum + item.duration, 0);
 }
 
 /**
  * Calculate the current state of the simulated live broadcast
  * based on server time and scheduled start.
+ * Handles playlists and looping.
  */
 export function calculateSimuliveState(
   serverTimeMs: number,
@@ -42,20 +67,51 @@ export function calculateSimuliveState(
       ? new Date(config.scheduledStart).getTime()
       : config.scheduledStart.getTime();
 
+  const playlistDuration = getPlaylistDuration(config.items);
+  const totalDuration = playlistDuration * config.loopCount;
+
   const elapsedMs = serverTimeMs - scheduledStartMs;
   const elapsedSeconds = elapsedMs / 1000;
 
-  const isLive = elapsedSeconds >= 0 && elapsedSeconds < config.videoDuration;
-  const hasEnded = elapsedSeconds >= config.videoDuration;
-
-  // Clamp position between 0 and video duration
-  const currentPosition = Math.max(
-    0,
-    Math.min(elapsedSeconds, config.videoDuration)
-  );
+  const isLive = elapsedSeconds >= 0 && elapsedSeconds < totalDuration;
+  const hasEnded = elapsedSeconds >= totalDuration;
 
   const secondsUntilStart = Math.max(0, -elapsedSeconds);
-  const secondsRemaining = Math.max(0, config.videoDuration - elapsedSeconds);
+  const secondsRemaining = Math.max(0, totalDuration - elapsedSeconds);
+
+  // Default values for before start or after end
+  let currentPosition = 0;
+  let currentItemIndex = 0;
+  let currentLoop = 1;
+
+  if (isLive && config.items.length > 0) {
+    // Calculate which loop we're in
+    const elapsedInBroadcast = Math.max(0, elapsedSeconds);
+    currentLoop = Math.min(
+      config.loopCount,
+      Math.floor(elapsedInBroadcast / playlistDuration) + 1
+    );
+
+    // Calculate position within current loop
+    const positionInLoop = elapsedInBroadcast % playlistDuration;
+
+    // Find which item we're on and position within it
+    let accumulated = 0;
+    for (let i = 0; i < config.items.length; i++) {
+      const itemDuration = config.items[i].duration;
+      if (positionInLoop < accumulated + itemDuration) {
+        currentItemIndex = i;
+        currentPosition = positionInLoop - accumulated;
+        break;
+      }
+      accumulated += itemDuration;
+    }
+  } else if (hasEnded && config.items.length > 0) {
+    // At the end, show last item at its end
+    currentItemIndex = config.items.length - 1;
+    currentPosition = config.items[currentItemIndex].duration;
+    currentLoop = config.loopCount;
+  }
 
   return {
     isLive,
@@ -63,6 +119,9 @@ export function calculateSimuliveState(
     currentPosition,
     secondsUntilStart,
     secondsRemaining,
+    currentItemIndex,
+    currentLoop,
+    totalDuration,
   };
 }
 

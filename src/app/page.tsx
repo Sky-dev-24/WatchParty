@@ -1,18 +1,28 @@
 import Link from "next/link";
 import prisma from "@/lib/db";
-import { formatTime } from "@/lib/simulive";
+import { formatTime, getPlaylistDuration } from "@/lib/simulive";
 
 // ISR: Regenerate every 30 seconds for near-real-time updates
 // This dramatically reduces database load at scale
 export const revalidate = 30;
 
+// Helper to calculate total stream duration
+function getStreamDuration(stream: { items: { duration: number }[]; loopCount: number }) {
+  return getPlaylistDuration(stream.items as never) * stream.loopCount;
+}
+
 export default async function Home() {
   // Get active streams (with fallback for build-time when DB isn't available)
-  let streams: Awaited<ReturnType<typeof prisma.stream.findMany>> = [];
+  let streams: Awaited<ReturnType<typeof prisma.stream.findMany<{ include: { items: true } }>>> = [];
   try {
     streams = await prisma.stream.findMany({
       where: { isActive: true },
       orderBy: { scheduledStart: "asc" },
+      include: {
+        items: {
+          orderBy: { order: "asc" },
+        },
+      },
     });
   } catch (error) {
     // During build time, database may not be available
@@ -25,7 +35,8 @@ export default async function Home() {
   const liveStreams = streams.filter((s) => {
     const start = new Date(s.scheduledStart);
     const elapsed = (now.getTime() - start.getTime()) / 1000;
-    return elapsed >= 0 && elapsed < s.duration;
+    const totalDuration = getStreamDuration(s);
+    return elapsed >= 0 && elapsed < totalDuration;
   });
 
   const upcomingStreams = streams.filter((s) => {
@@ -58,7 +69,7 @@ export default async function Home() {
                       {stream.title}
                     </h3>
                     <p className="text-gray-400 text-sm">
-                      Duration: {formatTime(stream.duration)}
+                      Duration: {formatTime(getStreamDuration(stream))}
                     </p>
                   </div>
                   <span className="bg-red-600 text-white text-xs px-2 py-1 rounded font-medium">
@@ -92,7 +103,7 @@ export default async function Home() {
                         Starts: {start.toLocaleString()}
                       </p>
                       <p className="text-gray-400 text-sm">
-                        Duration: {formatTime(stream.duration)}
+                        Duration: {formatTime(getStreamDuration(stream))}
                       </p>
                     </div>
                     <span className="bg-yellow-600 text-white text-xs px-2 py-1 rounded font-medium">

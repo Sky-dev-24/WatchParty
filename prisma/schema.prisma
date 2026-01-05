@@ -16,17 +16,16 @@ model Stream {
   slug      String   @unique // URL-friendly identifier (e.g., "new-years-eve-2024")
   title     String
 
-  // Mux asset details
-  assetId        String  // Mux asset ID
-  playbackId     String  // Mux playback ID
-  playbackPolicy String  @default("public") // "public" or "signed"
-  duration       Float   // Video duration in seconds (fetched from Mux)
-
   // Scheduling
   scheduledStart DateTime // When the "broadcast" starts
 
   // Status
   isActive   Boolean @default(false) // Whether this stream is currently active/visible
+  endedAt    DateTime? // If set, stream was force-stopped at this time
+
+  // Playlist & Looping
+  loopCount  Int @default(1) // How many times to play the playlist (1-10)
+  items      PlaylistItem[]
 
   // Optional settings
   syncInterval    Int @default(5000)  // How often to sync (ms)
@@ -36,6 +35,27 @@ model Stream {
   @@index([isActive])
   @@index([scheduledStart])
   @@index([isActive, scheduledStart])
+}
+
+model PlaylistItem {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  // Relation to stream
+  streamId  String
+  stream    Stream   @relation(fields: [streamId], references: [id], onDelete: Cascade)
+
+  // Mux asset details
+  assetId        String  // Mux asset ID
+  playbackId     String  // Mux playback ID
+  playbackPolicy String  @default("public") // "public" or "signed"
+  duration       Float   // Video duration in seconds
+
+  // Order in playlist (0-indexed)
+  order     Int
+
+  @@unique([streamId, order])
+  @@index([streamId])
 }
 
 model AuditLog {

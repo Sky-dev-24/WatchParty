@@ -89,9 +89,16 @@ MUX_PRIVATE_KEY        # Base64-encoded
 
 ## Database Schema
 
-Two models in `prisma/schema.prisma`:
-- **Stream**: slug, title, assetId, playbackId, duration, scheduledStart, isActive, syncInterval, driftTolerance
+Three models in `prisma/schema.prisma`:
+- **Stream**: slug, title, scheduledStart, isActive, endedAt, loopCount (1-10), syncInterval, driftTolerance
+- **PlaylistItem**: streamId, assetId, playbackId, playbackPolicy, duration, order
 - **AuditLog**: event, severity, ipAddress, userAgent, details (JSON)
+
+### Playlist & Looping
+- Streams contain multiple PlaylistItems (videos) that play in sequence
+- `loopCount` controls how many times the playlist repeats (max 10)
+- Total broadcast duration = sum(item durations) × loopCount
+- Player automatically switches videos and loops based on synchronized time
 
 ## Scaling Reference
 

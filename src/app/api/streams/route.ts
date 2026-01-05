@@ -22,6 +22,11 @@ export async function GET() {
     // Cache miss - fetch from database
     const streams = await prisma.stream.findMany({
       orderBy: { scheduledStart: "desc" },
+      include: {
+        items: {
+          orderBy: { order: "asc" },
+        },
+      },
     });
 
     // Store in cache
@@ -52,12 +57,12 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { slug, title, assetId, scheduledStart, syncInterval, driftTolerance } = body;
+    const { slug, title, assetIds, scheduledStart, syncInterval, driftTolerance, loopCount } = body;
 
     // Validate required fields
-    if (!slug || !title || !assetId || !scheduledStart) {
+    if (!slug || !title || !assetIds || !Array.isArray(assetIds) || assetIds.length === 0 || !scheduledStart) {
       return NextResponse.json(
-        { error: "Missing required fields: slug, title, assetId, scheduledStart" },
+        { error: "Missing required fields: slug, title, assetIds (array), scheduledStart" },
         { status: 400 }
       );
     }
@@ -70,6 +75,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate loopCount (1-10)
+    const validLoopCount = Math.min(10, Math.max(1, loopCount || 1));
+
     // Check if slug already exists
     const existing = await prisma.stream.findUnique({ where: { slug } });
     if (existing) {
@@ -79,45 +87,69 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch asset info from Mux to get playback ID and duration
-    let assetInfo;
-    try {
-      assetInfo = await getAssetInfo(assetId);
-    } catch (error) {
-      console.error("Failed to fetch asset info:", error);
-      return NextResponse.json(
-        { error: "Failed to fetch asset from Mux. Check that the Asset ID is correct." },
-        { status: 400 }
-      );
-    }
+    // Fetch asset info for all assets
+    const playlistItems: Array<{
+      assetId: string;
+      playbackId: string;
+      playbackPolicy: string;
+      duration: number;
+      order: number;
+    }> = [];
 
-    if (!assetInfo.playbackId) {
-      return NextResponse.json(
-        { error: "Asset does not have a public playback ID" },
-        { status: 400 }
-      );
-    }
+    for (let i = 0; i < assetIds.length; i++) {
+      const assetId = assetIds[i];
+      let assetInfo;
+      try {
+        assetInfo = await getAssetInfo(assetId);
+      } catch (error) {
+        console.error("Failed to fetch asset info:", error);
+        return NextResponse.json(
+          { error: `Failed to fetch asset ${i + 1} from Mux. Check that the Asset ID is correct.` },
+          { status: 400 }
+        );
+      }
 
-    if (assetInfo.status !== "ready") {
-      return NextResponse.json(
-        { error: `Asset is not ready. Current status: ${assetInfo.status}` },
-        { status: 400 }
-      );
-    }
+      if (!assetInfo.playbackId) {
+        return NextResponse.json(
+          { error: `Asset ${i + 1} does not have a public playback ID` },
+          { status: 400 }
+        );
+      }
 
-    // Create the stream
-    const stream = await prisma.stream.create({
-      data: {
-        slug,
-        title,
+      if (assetInfo.status !== "ready") {
+        return NextResponse.json(
+          { error: `Asset ${i + 1} is not ready. Current status: ${assetInfo.status}` },
+          { status: 400 }
+        );
+      }
+
+      playlistItems.push({
         assetId,
         playbackId: assetInfo.playbackId,
         playbackPolicy: assetInfo.playbackPolicy || "public",
         duration: assetInfo.duration || 0,
+        order: i,
+      });
+    }
+
+    // Create the stream with playlist items
+    const stream = await prisma.stream.create({
+      data: {
+        slug,
+        title,
         scheduledStart: new Date(scheduledStart),
         syncInterval: syncInterval || 5000,
         driftTolerance: driftTolerance || 2,
+        loopCount: validLoopCount,
         isActive: false,
+        items: {
+          create: playlistItems,
+        },
+      },
+      include: {
+        items: {
+          orderBy: { order: "asc" },
+        },
       },
     });
 

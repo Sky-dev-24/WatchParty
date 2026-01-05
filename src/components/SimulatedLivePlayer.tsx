@@ -9,6 +9,7 @@ import {
   hasDrifted,
   type SimuliveConfig,
   type SimuliveState,
+  type PlaylistItem,
 } from "@/lib/simulive";
 
 interface PlaybackTokens {
@@ -18,13 +19,14 @@ interface PlaybackTokens {
 }
 
 interface SimulatedLivePlayerProps {
-  playbackId: string;
-  playbackPolicy?: string;
+  items: PlaylistItem[];
+  loopCount: number;
   scheduledStart: string;
-  videoDuration: number;
   title?: string;
   syncInterval?: number;
   driftTolerance?: number;
+  embedded?: boolean;
+  streamSlug?: string; // For polling stream status (force-stop detection)
 }
 
 // Format seconds into countdown display
@@ -49,13 +51,14 @@ function CountdownUnit({ value, label }: { value: number; label: string }) {
 }
 
 export default function SimulatedLivePlayer({
-  playbackId,
-  playbackPolicy = "public",
+  items,
+  loopCount,
   scheduledStart,
-  videoDuration,
   title = "Live Stream",
   syncInterval = 5000,
   driftTolerance = 3,
+  embedded = false,
+  streamSlug,
 }: SimulatedLivePlayerProps) {
   const playerRef = useRef<MuxPlayerElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -69,14 +72,21 @@ export default function SimulatedLivePlayer({
   const [playerReady, setPlayerReady] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [showCountdownOverlay, setShowCountdownOverlay] = useState(true);
+  const [forceStopped, setForceStopped] = useState(false);
+  const [currentItemIndex, setCurrentItemIndex] = useState(0);
   const prevIsLiveRef = useRef(false);
+  const prevItemIndexRef = useRef(0);
 
   const config: SimuliveConfig = {
     scheduledStart,
-    videoDuration,
+    items,
+    loopCount,
     syncInterval,
     driftTolerance,
   };
+
+  // Get current item
+  const currentItem = items[currentItemIndex] || items[0];
 
   const lastSyncTimeRef = useRef<number>(Date.now());
   const expectedElapsedRef = useRef<number>(0);
@@ -127,15 +137,16 @@ export default function SimulatedLivePlayer({
     return () => clearInterval(clockCheckInterval);
   }, [calibrateTime]);
 
+  // Fetch tokens for current item if signed
   useEffect(() => {
-    if (playbackPolicy !== "signed") {
+    if (!currentItem || currentItem.playbackPolicy !== "signed") {
       setTokens(null);
       return;
     }
 
     async function fetchTokens() {
       try {
-        const res = await fetch(`/api/tokens/${playbackId}`);
+        const res = await fetch(`/api/tokens/${currentItem.playbackId}`);
         if (!res.ok) throw new Error("Failed to fetch tokens");
         const data = await res.json();
         setTokens(data);
@@ -146,7 +157,35 @@ export default function SimulatedLivePlayer({
       }
     }
     fetchTokens();
-  }, [playbackId, playbackPolicy]);
+  }, [currentItem]);
+
+  // Poll for stream status (force-stop detection)
+  useEffect(() => {
+    if (!streamSlug) return;
+
+    async function checkStreamStatus() {
+      try {
+        const res = await fetch(`/api/streams/${streamSlug}/status`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.endedAt) {
+          setForceStopped(true);
+          // Pause the player
+          const player = playerRef.current;
+          if (player) player.pause();
+        }
+      } catch (error) {
+        console.error("Failed to check stream status:", error);
+      }
+    }
+
+    // Check immediately on mount
+    checkStreamStatus();
+
+    // Poll at syncInterval
+    const pollInterval = setInterval(checkStreamStatus, syncInterval);
+    return () => clearInterval(pollInterval);
+  }, [streamSlug, syncInterval]);
 
   const getSyncedTime = useCallback(() => {
     return Date.now() + serverTimeOffset;
@@ -154,10 +193,17 @@ export default function SimulatedLivePlayer({
 
   const syncPlayer = useCallback(() => {
     const player = playerRef.current;
-    if (!player) return;
+    if (!player || items.length === 0) return;
 
     const currentState = calculateSimuliveState(getSyncedTime(), config);
     setState(currentState);
+
+    // Check if we need to switch to a different item
+    if (currentState.currentItemIndex !== prevItemIndexRef.current) {
+      prevItemIndexRef.current = currentState.currentItemIndex;
+      setCurrentItemIndex(currentState.currentItemIndex);
+      setPlayerReady(false); // Reset player ready state for new video
+    }
 
     if (currentState.isLive) {
       const actualPosition = player.currentTime || 0;
@@ -171,12 +217,13 @@ export default function SimulatedLivePlayer({
         player.play().catch(() => {});
       }
     } else if (currentState.hasEnded) {
-      player.currentTime = videoDuration;
+      const lastItem = items[items.length - 1];
+      player.currentTime = lastItem?.duration || 0;
       player.pause();
     }
 
     setIsLoading(false);
-  }, [config, getSyncedTime, driftTolerance, videoDuration]);
+  }, [config, getSyncedTime, driftTolerance, items]);
 
   useEffect(() => {
     const initialTimer = setTimeout(syncPlayer, 500);
@@ -252,9 +299,9 @@ export default function SimulatedLivePlayer({
     prevIsLiveRef.current = state?.isLive || false;
   }, [state?.isLive]);
 
-  const showCountdown = state && !state.isLive && state.secondsUntilStart > 0;
-  const showEnded = state?.hasEnded;
-  const showPlayer = state?.isLive;
+  const showCountdown = state && !state.isLive && state.secondsUntilStart > 0 && !forceStopped;
+  const showEnded = state?.hasEnded || forceStopped;
+  const showPlayer = state?.isLive && !forceStopped;
 
   // Countdown values - keep last values during transition
   const countdownRef = useRef<{ days: number; hours: number; minutes: number; secs: number } | null>(null);
@@ -391,12 +438,13 @@ export default function SimulatedLivePlayer({
       )}
 
       {/* Player */}
-      {(playbackPolicy === "public" || tokens) && !tokenError && (
+      {currentItem && (currentItem.playbackPolicy === "public" || tokens) && !tokenError && (
         <MuxPlayer
+          key={currentItem.playbackId} // Force remount when video changes
           ref={playerRef}
-          playbackId={playbackId}
+          playbackId={currentItem.playbackId}
           streamType="on-demand"
-          className={`simulive-player aspect-video rounded-lg overflow-hidden ${playerReady ? 'ready' : ''}`}
+          className={`simulive-player aspect-video overflow-hidden ${embedded ? '' : 'rounded-lg'} ${playerReady ? 'ready' : ''}`}
           metadata={{ video_title: title }}
           autoPlay="muted"
           onLoadedMetadata={handleLoadedMetadata}

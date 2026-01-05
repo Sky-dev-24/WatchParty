@@ -12,6 +12,11 @@ const getStream = cache(async (slug: string) => {
   try {
     return await prisma.stream.findUnique({
       where: { slug },
+      include: {
+        items: {
+          orderBy: { order: "asc" },
+        },
+      },
     });
   } catch (error) {
     // During build time, database may not be available
@@ -33,8 +38,8 @@ export default async function WatchPage({ params }: PageProps) {
     notFound();
   }
 
-  // Check if stream is active
-  if (!stream.isActive) {
+  // Check if stream is active or has items
+  if (!stream.isActive || stream.items.length === 0) {
     return (
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
@@ -55,13 +60,13 @@ export default async function WatchPage({ params }: PageProps) {
     <main className="container mx-auto px-4 py-8">
       <div className="max-w-4xl mx-auto">
         <SimulatedLivePlayer
-          playbackId={stream.playbackId}
-          playbackPolicy={stream.playbackPolicy}
+          items={stream.items}
+          loopCount={stream.loopCount}
           scheduledStart={stream.scheduledStart.toISOString()}
-          videoDuration={stream.duration}
           title={stream.title}
           syncInterval={stream.syncInterval}
           driftTolerance={stream.driftTolerance}
+          streamSlug={stream.slug}
         />
         <h1 className="text-2xl font-bold mt-6">{stream.title}</h1>
       </div>

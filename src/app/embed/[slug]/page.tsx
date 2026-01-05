@@ -10,6 +10,11 @@ const getStream = cache(async (slug: string) => {
   try {
     return await prisma.stream.findUnique({
       where: { slug },
+      include: {
+        items: {
+          orderBy: { order: "asc" },
+        },
+      },
     });
   } catch (error) {
     console.error("Failed to fetch stream:", error);
@@ -29,7 +34,7 @@ export default async function EmbedPage({ params }: PageProps) {
     notFound();
   }
 
-  if (!stream.isActive) {
+  if (!stream.isActive || stream.items.length === 0) {
     return (
       <div className="w-full h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-center">
@@ -45,13 +50,14 @@ export default async function EmbedPage({ params }: PageProps) {
   return (
     <div className="w-full h-screen bg-black">
       <SimulatedLivePlayer
-        playbackId={stream.playbackId}
-        playbackPolicy={stream.playbackPolicy}
+        items={stream.items}
+        loopCount={stream.loopCount}
         scheduledStart={stream.scheduledStart.toISOString()}
-        videoDuration={stream.duration}
         title={stream.title}
         syncInterval={stream.syncInterval}
         driftTolerance={stream.driftTolerance}
+        embedded
+        streamSlug={stream.slug}
       />
     </div>
   );

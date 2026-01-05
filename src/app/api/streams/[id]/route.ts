@@ -20,6 +20,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const stream = await prisma.stream.findUnique({
       where: { id },
+      include: {
+        items: {
+          orderBy: { order: "asc" },
+        },
+      },
     });
 
     if (!stream) {
@@ -54,6 +59,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       "isActive",
       "syncInterval",
       "driftTolerance",
+      "endedAt",
+      "loopCount",
     ];
 
     const updateData: Record<string, unknown> = {};
@@ -61,6 +68,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       if (body[field] !== undefined) {
         if (field === "scheduledStart") {
           updateData[field] = new Date(body[field]);
+        } else if (field === "endedAt") {
+          // endedAt can be null (to resume) or a date string (to stop)
+          updateData[field] = body[field] ? new Date(body[field]) : null;
+        } else if (field === "loopCount") {
+          // loopCount must be between 1 and 10
+          updateData[field] = Math.min(10, Math.max(1, body[field]));
         } else {
           updateData[field] = body[field];
         }
@@ -81,6 +94,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const stream = await prisma.stream.update({
       where: { id },
       data: updateData,
+      include: {
+        items: {
+          orderBy: { order: "asc" },
+        },
+      },
     });
 
     // Log stream update

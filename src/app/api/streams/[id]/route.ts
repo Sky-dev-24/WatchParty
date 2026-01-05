@@ -10,6 +10,14 @@ async function invalidateStreamsCache() {
   await deleteCached(STREAMS_CACHE_KEY);
 }
 
+async function invalidateStatusCache(streamId: string, slug: string) {
+  // Invalidate both ID and slug-based cache keys
+  await Promise.all([
+    deleteCached(`stream:${streamId}:status`),
+    deleteCached(`stream:${slug}:status`),
+  ]);
+}
+
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
@@ -110,8 +118,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       changes: Object.keys(updateData),
     });
 
-    // Invalidate cache after update
+    // Invalidate caches after update
     await invalidateStreamsCache();
+
+    // Invalidate status cache if endedAt or isActive changed (for force-stop polling)
+    if (updateData.endedAt !== undefined || updateData.isActive !== undefined) {
+      await invalidateStatusCache(stream.id, stream.slug);
+    }
 
     return NextResponse.json(stream);
   } catch (error) {

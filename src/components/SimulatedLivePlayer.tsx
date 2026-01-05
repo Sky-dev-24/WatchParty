@@ -60,13 +60,16 @@ export default function SimulatedLivePlayer({
   embedded = false,
   streamSlug,
 }: SimulatedLivePlayerProps) {
-  const playerRef = useRef<MuxPlayerElement | null>(null);
+  // Dual player refs for seamless switching
+  const playerRef0 = useRef<MuxPlayerElement | null>(null);
+  const playerRef1 = useRef<MuxPlayerElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const hideTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [state, setState] = useState<SimuliveState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [serverTimeOffset, setServerTimeOffset] = useState(0);
   const [tokens, setTokens] = useState<PlaybackTokens | null>(null);
+  const [nextTokens, setNextTokens] = useState<PlaybackTokens | null>(null);
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [showBadge, setShowBadge] = useState(true);
   const [playerReady, setPlayerReady] = useState(false);
@@ -74,6 +77,7 @@ export default function SimulatedLivePlayer({
   const [showCountdownOverlay, setShowCountdownOverlay] = useState(true);
   const [forceStopped, setForceStopped] = useState(false);
   const [currentItemIndex, setCurrentItemIndex] = useState(0);
+  const [activePlayer, setActivePlayer] = useState<0 | 1>(0); // Which player is visible
   const prevIsLiveRef = useRef(false);
   const prevItemIndexRef = useRef(0);
 
@@ -85,8 +89,13 @@ export default function SimulatedLivePlayer({
     driftTolerance,
   };
 
-  // Get current item
+  // Get current and next items
   const currentItem = items[currentItemIndex] || items[0];
+  const nextItemIndex = (currentItemIndex + 1) % items.length;
+  const nextItem = items.length > 1 ? items[nextItemIndex] : null;
+
+  // Get the active player ref
+  const playerRef = activePlayer === 0 ? playerRef0 : playerRef1;
 
   const lastSyncTimeRef = useRef<number>(Date.now());
   const expectedElapsedRef = useRef<number>(0);
@@ -159,6 +168,27 @@ export default function SimulatedLivePlayer({
     fetchTokens();
   }, [currentItem]);
 
+  // Preload tokens for next item if signed
+  useEffect(() => {
+    if (!nextItem || nextItem.playbackPolicy !== "signed") {
+      setNextTokens(null);
+      return;
+    }
+
+    const playbackId = nextItem.playbackId;
+    async function fetchNextTokens() {
+      try {
+        const res = await fetch(`/api/tokens/${playbackId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setNextTokens(data);
+      } catch (error) {
+        console.error("Failed to prefetch next tokens:", error);
+      }
+    }
+    fetchNextTokens();
+  }, [nextItem]);
+
   // Poll for stream status (force-stop detection)
   useEffect(() => {
     if (!streamSlug) return;
@@ -201,8 +231,26 @@ export default function SimulatedLivePlayer({
     // Check if we need to switch to a different item
     if (currentState.currentItemIndex !== prevItemIndexRef.current) {
       prevItemIndexRef.current = currentState.currentItemIndex;
+
+      // Switch to the other player for seamless transition
+      setActivePlayer(prev => prev === 0 ? 1 : 0);
+
+      // Promote preloaded tokens to current
+      if (nextTokens) {
+        setTokens(nextTokens);
+        setNextTokens(null);
+      }
+
       setCurrentItemIndex(currentState.currentItemIndex);
-      setPlayerReady(false); // Reset player ready state for new video
+
+      // Small delay to let the new player initialize, then seek to correct position
+      setTimeout(() => {
+        const newPlayer = activePlayer === 0 ? playerRef1.current : playerRef0.current;
+        if (newPlayer && currentState.isLive) {
+          newPlayer.currentTime = currentState.currentPosition;
+          newPlayer.play().catch(() => {});
+        }
+      }, 100);
     }
 
     if (currentState.isLive) {
@@ -223,7 +271,7 @@ export default function SimulatedLivePlayer({
     }
 
     setIsLoading(false);
-  }, [config, getSyncedTime, driftTolerance, items]);
+  }, [config, getSyncedTime, driftTolerance, items, nextTokens, activePlayer]);
 
   useEffect(() => {
     const initialTimer = setTimeout(syncPlayer, 500);
@@ -437,27 +485,82 @@ export default function SimulatedLivePlayer({
         </div>
       )}
 
-      {/* Player */}
+      {/* Dual Players for seamless switching */}
       {currentItem && (currentItem.playbackPolicy === "public" || tokens) && !tokenError && (
-        <MuxPlayer
-          key={currentItem.playbackId} // Force remount when video changes
-          ref={playerRef}
-          playbackId={currentItem.playbackId}
-          streamType="on-demand"
-          className={`simulive-player aspect-video overflow-hidden ${embedded ? '' : 'rounded-lg'} ${playerReady ? 'ready' : ''}`}
-          metadata={{ video_title: title }}
-          autoPlay="muted"
-          onLoadedMetadata={handleLoadedMetadata}
-          onSeeking={handleSeeking}
-          onPause={handlePause}
-          {...(tokens && {
-            tokens: {
-              playback: tokens["playback-token"],
-              thumbnail: tokens["thumbnail-token"],
-              storyboard: tokens["storyboard-token"],
-            },
-          })}
-        />
+        <>
+          {/* Player 0 */}
+          <MuxPlayer
+            ref={playerRef0}
+            playbackId={activePlayer === 0 ? currentItem.playbackId : (nextItem?.playbackId || currentItem.playbackId)}
+            streamType="on-demand"
+            className={`simulive-player aspect-video overflow-hidden ${embedded ? '' : 'rounded-lg'} ${playerReady ? 'ready' : ''}`}
+            style={{
+              opacity: activePlayer === 0 ? 1 : 0,
+              position: activePlayer === 0 ? 'relative' : 'absolute',
+              top: 0,
+              left: 0,
+              transition: 'opacity 0.3s ease-in-out',
+              pointerEvents: activePlayer === 0 ? 'auto' : 'none',
+            }}
+            metadata={{ video_title: title }}
+            autoPlay={activePlayer === 0 ? "muted" : false}
+            muted={activePlayer !== 0}
+            onLoadedMetadata={activePlayer === 0 ? handleLoadedMetadata : undefined}
+            onSeeking={activePlayer === 0 ? handleSeeking : undefined}
+            onPause={activePlayer === 0 ? handlePause : undefined}
+            {...(activePlayer === 0 && tokens && {
+              tokens: {
+                playback: tokens["playback-token"],
+                thumbnail: tokens["thumbnail-token"],
+                storyboard: tokens["storyboard-token"],
+              },
+            })}
+            {...(activePlayer !== 0 && nextTokens && {
+              tokens: {
+                playback: nextTokens["playback-token"],
+                thumbnail: nextTokens["thumbnail-token"],
+                storyboard: nextTokens["storyboard-token"],
+              },
+            })}
+          />
+          {/* Player 1 - for seamless transition */}
+          {items.length > 1 && (
+            <MuxPlayer
+              ref={playerRef1}
+              playbackId={activePlayer === 1 ? currentItem.playbackId : (nextItem?.playbackId || currentItem.playbackId)}
+              streamType="on-demand"
+              className={`simulive-player aspect-video overflow-hidden ${embedded ? '' : 'rounded-lg'} ${playerReady ? 'ready' : ''}`}
+              style={{
+                opacity: activePlayer === 1 ? 1 : 0,
+                position: activePlayer === 1 ? 'relative' : 'absolute',
+                top: 0,
+                left: 0,
+                transition: 'opacity 0.3s ease-in-out',
+                pointerEvents: activePlayer === 1 ? 'auto' : 'none',
+              }}
+              metadata={{ video_title: title }}
+              autoPlay={activePlayer === 1 ? "muted" : false}
+              muted={activePlayer !== 1}
+              onLoadedMetadata={activePlayer === 1 ? handleLoadedMetadata : undefined}
+              onSeeking={activePlayer === 1 ? handleSeeking : undefined}
+              onPause={activePlayer === 1 ? handlePause : undefined}
+              {...(activePlayer === 1 && tokens && {
+                tokens: {
+                  playback: tokens["playback-token"],
+                  thumbnail: tokens["thumbnail-token"],
+                  storyboard: tokens["storyboard-token"],
+                },
+              })}
+              {...(activePlayer !== 1 && nextTokens && {
+                tokens: {
+                  playback: nextTokens["playback-token"],
+                  thumbnail: nextTokens["thumbnail-token"],
+                  storyboard: nextTokens["storyboard-token"],
+                },
+              })}
+            />
+          )}
+        </>
       )}
     </div>
   );

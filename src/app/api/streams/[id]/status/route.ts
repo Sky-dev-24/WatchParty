@@ -1,14 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { getCached, setCached } from "@/lib/redis";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
+interface StreamStatus {
+  endedAt: string | null;
+  isActive: boolean;
+}
+
+const STATUS_CACHE_TTL = 2; // 2 seconds - balance between responsiveness and load
+
 // GET /api/streams/[id]/status - Lightweight status check for polling
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
+    const cacheKey = `stream:${id}:status`;
+
+    // Check cache first
+    const cached = await getCached<StreamStatus>(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached, {
+        headers: { "X-Cache": "HIT" },
+      });
+    }
 
     // Try to find by ID first, then by slug
     let stream = await prisma.stream.findUnique({
@@ -27,9 +44,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Stream not found" }, { status: 404 });
     }
 
-    return NextResponse.json({
+    const status: StreamStatus = {
       endedAt: stream.endedAt?.toISOString() || null,
       isActive: stream.isActive,
+    };
+
+    // Cache the result
+    await setCached(cacheKey, status, STATUS_CACHE_TTL);
+
+    return NextResponse.json(status, {
+      headers: { "X-Cache": "MISS" },
     });
   } catch (error) {
     console.error("Failed to fetch stream status:", error);

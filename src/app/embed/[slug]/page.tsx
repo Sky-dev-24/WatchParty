@@ -48,7 +48,7 @@ export default async function EmbedPage({ params }: PageProps) {
   }
 
   return (
-    <div className="w-full h-full bg-black">
+    <div className="w-full h-full bg-black overflow-hidden">
       <SimulatedLivePlayer
         items={stream.items}
         loopCount={stream.loopCount}

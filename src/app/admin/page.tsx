@@ -63,7 +63,7 @@ export default function AdminPage() {
     if (embedMode === "responsive") {
       return `<iframe
   src="${origin}/embed/${slug}"
-  style="width: 100%; aspect-ratio: 16 / 9; border: 0;"
+  style="display: block; width: 100%; aspect-ratio: 16 / 9; border: 0;"
   allowfullscreen
   allow="autoplay; fullscreen"
 ></iframe>`;

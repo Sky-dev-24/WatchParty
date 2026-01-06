@@ -36,7 +36,7 @@ export default async function EmbedPage({ params }: PageProps) {
 
   if (!stream.isActive || stream.items.length === 0) {
     return (
-      <div className="w-full h-screen bg-gray-900 flex items-center justify-center">
+      <div className="w-full h-full bg-gray-900 flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-xl font-bold mb-2">Stream Unavailable</h1>
           <p className="text-gray-400 text-sm">
@@ -48,7 +48,7 @@ export default async function EmbedPage({ params }: PageProps) {
   }
 
   return (
-    <div className="w-full h-screen bg-black">
+    <div className="w-full h-full bg-black">
       <SimulatedLivePlayer
         items={stream.items}
         loopCount={stream.loopCount}

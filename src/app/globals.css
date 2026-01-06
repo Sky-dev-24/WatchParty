@@ -30,6 +30,9 @@
 .simulive-container.embedded {
   border-radius: 0;
   max-width: none;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
 }
 
 /* ============================================

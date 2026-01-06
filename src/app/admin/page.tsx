@@ -47,6 +47,7 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [embedModal, setEmbedModal] = useState<Stream | null>(null);
+  const [embedMode, setEmbedMode] = useState<"responsive" | "fixed">("responsive");
   const [embedSize, setEmbedSize] = useState<"small" | "medium" | "large" | "xl">("medium");
 
   const embedSizes = {
@@ -55,6 +56,29 @@ export default function AdminPage() {
     large: { width: 854, height: 480 },
     xl: { width: 1280, height: 720 },
   };
+
+  // Generate responsive or fixed embed code
+  function getEmbedCode(slug: string) {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    if (embedMode === "responsive") {
+      return `<iframe
+  src="${origin}/embed/${slug}"
+  style="width: 100%; aspect-ratio: 16 / 9; border: 0;"
+  allowfullscreen
+  allow="autoplay; fullscreen"
+></iframe>`;
+    } else {
+      const { width, height } = embedSizes[embedSize];
+      return `<iframe
+  src="${origin}/embed/${slug}"
+  width="${width}"
+  height="${height}"
+  frameborder="0"
+  allowfullscreen
+  allow="autoplay; fullscreen"
+></iframe>`;
+    }
+  }
 
   // Logout handler
   async function handleLogout() {
@@ -553,42 +577,64 @@ export default function AdminPage() {
             <p className="text-gray-400 text-sm mb-4">
               Copy this code to embed &ldquo;{embedModal.title}&rdquo; on your website:
             </p>
+            {/* Mode toggle */}
             <div className="flex gap-2 mb-4">
-              {(["small", "medium", "large", "xl"] as const).map((size) => (
-                <button
-                  key={size}
-                  onClick={() => setEmbedSize(size)}
-                  className={`px-3 py-1.5 rounded text-sm font-medium ${
-                    embedSize === size
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-                  }`}
-                >
-                  {size === "xl" ? "XL" : size.charAt(0).toUpperCase() + size.slice(1)}
-                  <span className="text-xs ml-1 opacity-70">
-                    {embedSizes[size].width}x{embedSizes[size].height}
-                  </span>
-                </button>
-              ))}
+              <button
+                onClick={() => setEmbedMode("responsive")}
+                className={`px-3 py-1.5 rounded text-sm font-medium ${
+                  embedMode === "responsive"
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                }`}
+              >
+                Responsive
+              </button>
+              <button
+                onClick={() => setEmbedMode("fixed")}
+                className={`px-3 py-1.5 rounded text-sm font-medium ${
+                  embedMode === "fixed"
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                }`}
+              >
+                Fixed Size
+              </button>
             </div>
+            {/* Fixed size options */}
+            {embedMode === "fixed" && (
+              <div className="flex gap-2 mb-4">
+                {(["small", "medium", "large", "xl"] as const).map((size) => (
+                  <button
+                    key={size}
+                    onClick={() => setEmbedSize(size)}
+                    className={`px-3 py-1.5 rounded text-sm font-medium ${
+                      embedSize === size
+                        ? "bg-purple-600 text-white"
+                        : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                    }`}
+                  >
+                    {size === "xl" ? "XL" : size.charAt(0).toUpperCase() + size.slice(1)}
+                    <span className="text-xs ml-1 opacity-70">
+                      {embedSizes[size].width}x{embedSizes[size].height}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {embedMode === "responsive" && (
+              <p className="text-gray-500 text-xs mb-4">
+                The player will automatically fill its container while maintaining 16:9 aspect ratio.
+              </p>
+            )}
             <div className="bg-gray-800 rounded p-4 font-mono text-sm overflow-x-auto">
               <code className="text-green-400 whitespace-pre-wrap break-all">
-{`<iframe
-  src="${typeof window !== "undefined" ? window.location.origin : ""}/embed/${embedModal.slug}"
-  width="${embedSizes[embedSize].width}"
-  height="${embedSizes[embedSize].height}"
-  frameborder="0"
-  allowfullscreen
-  allow="autoplay; fullscreen"
-></iframe>`}
+                {getEmbedCode(embedModal.slug)}
               </code>
             </div>
             <div className="flex gap-3 mt-4">
               <button
                 onClick={() => {
-                  const { width, height } = embedSizes[embedSize];
-                  const embedCode = `<iframe src="${window.location.origin}/embed/${embedModal.slug}" width="${width}" height="${height}" frameborder="0" allowfullscreen allow="autoplay; fullscreen"></iframe>`;
-                  navigator.clipboard.writeText(embedCode);
+                  navigator.clipboard.writeText(getEmbedCode(embedModal.slug));
                   alert("Embed code copied to clipboard!");
                 }}
                 className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-medium"

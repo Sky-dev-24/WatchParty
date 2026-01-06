@@ -12,8 +12,8 @@ export default function EmbedLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="bg-black text-white m-0 p-0 overflow-hidden">
+    <html lang="en" className="h-full">
+      <body className="h-full bg-black text-white m-0 p-0 overflow-hidden">
         {children}
       </body>
     </html>

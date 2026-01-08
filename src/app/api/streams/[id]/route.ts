@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { getAssetInfo } from "@/lib/mux";
 import { isApiAuthenticated, getClientIp } from "@/lib/auth";
 import { deleteCached } from "@/lib/redis";
 import { logStreamUpdated, logStreamDeleted } from "@/lib/audit";
@@ -59,6 +60,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const body = await request.json();
 
+    // Check if stream exists
+    const existingStream = await prisma.stream.findUnique({ where: { id } });
+    if (!existingStream) {
+      return NextResponse.json({ error: "Stream not found" }, { status: 404 });
+    }
+
     // Only allow updating certain fields
     const allowedFields = [
       "title",
@@ -72,6 +79,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     ];
 
     const updateData: Record<string, unknown> = {};
+    const changedFields: string[] = [];
+
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
         if (field === "scheduledStart") {
@@ -85,6 +94,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         } else {
           updateData[field] = body[field];
         }
+        changedFields.push(field);
       }
     }
 
@@ -99,6 +109,83 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Check slug uniqueness if being changed
+    if (updateData.slug && updateData.slug !== existingStream.slug) {
+      const slugExists = await prisma.stream.findUnique({
+        where: { slug: updateData.slug as string },
+      });
+      if (slugExists) {
+        return NextResponse.json(
+          { error: "A stream with this slug already exists" },
+          { status: 409 }
+        );
+      }
+    }
+
+    // Handle playlist update if assetIds provided
+    if (body.assetIds && Array.isArray(body.assetIds) && body.assetIds.length > 0) {
+      // Fetch asset info for all new assets
+      const playlistItems: Array<{
+        assetId: string;
+        playbackId: string;
+        playbackPolicy: string;
+        duration: number;
+        order: number;
+      }> = [];
+
+      for (let i = 0; i < body.assetIds.length; i++) {
+        const assetId = body.assetIds[i];
+        let assetInfo;
+        try {
+          assetInfo = await getAssetInfo(assetId);
+        } catch (error) {
+          console.error("Failed to fetch asset info:", error);
+          return NextResponse.json(
+            { error: `Failed to fetch asset ${i + 1} from Mux. Check that the Asset ID is correct.` },
+            { status: 400 }
+          );
+        }
+
+        if (!assetInfo.playbackId) {
+          return NextResponse.json(
+            { error: `Asset ${i + 1} does not have a public playback ID` },
+            { status: 400 }
+          );
+        }
+
+        if (assetInfo.status !== "ready") {
+          return NextResponse.json(
+            { error: `Asset ${i + 1} is not ready. Current status: ${assetInfo.status}` },
+            { status: 400 }
+          );
+        }
+
+        playlistItems.push({
+          assetId,
+          playbackId: assetInfo.playbackId,
+          playbackPolicy: assetInfo.playbackPolicy || "public",
+          duration: assetInfo.duration || 0,
+          order: i,
+        });
+      }
+
+      // Delete existing playlist items and create new ones in a transaction
+      await prisma.$transaction([
+        prisma.playlistItem.deleteMany({ where: { streamId: id } }),
+        ...playlistItems.map((item) =>
+          prisma.playlistItem.create({
+            data: {
+              streamId: id,
+              ...item,
+            },
+          })
+        ),
+      ]);
+
+      changedFields.push("playlist");
+    }
+
+    // Update the stream
     const stream = await prisma.stream.update({
       where: { id },
       data: updateData,
@@ -115,7 +202,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     await logStreamUpdated(clientIp, userAgent, {
       id: stream.id,
       title: stream.title,
-      changes: Object.keys(updateData),
+      changes: changedFields,
     });
 
     // Invalidate caches after update

@@ -49,6 +49,16 @@ export default function AdminPage() {
   const [embedModal, setEmbedModal] = useState<Stream | null>(null);
   const [embedMode, setEmbedMode] = useState<"responsive" | "fixed">("responsive");
   const [embedSize, setEmbedSize] = useState<"small" | "medium" | "large" | "xl">("medium");
+  const [editModal, setEditModal] = useState<Stream | null>(null);
+  const [editData, setEditData] = useState({
+    title: "",
+    slug: "",
+    scheduledStart: "",
+    loopCount: 1,
+    assetIds: [] as string[],
+  });
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
 
   const embedSizes = {
     small: { width: 480, height: 270 },
@@ -244,6 +254,59 @@ export default function AdminPage() {
       .replace(/\s+/g, "-")
       .replace(/-+/g, "-")
       .trim();
+  }
+
+  // Open edit modal with stream data
+  function openEditModal(stream: Stream) {
+    // Convert ISO date to local datetime format for the picker
+    const scheduledDate = new Date(stream.scheduledStart);
+    setEditData({
+      title: stream.title,
+      slug: stream.slug,
+      scheduledStart: scheduledDate.toISOString(),
+      loopCount: stream.loopCount,
+      assetIds: stream.items.map((item) => item.assetId),
+    });
+    setEditError(null);
+    setEditModal(stream);
+  }
+
+  // Handle edit form submission
+  async function handleEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editModal) return;
+
+    setEditError(null);
+    setEditLoading(true);
+
+    try {
+      const scheduledStartISO = new Date(editData.scheduledStart).toISOString();
+
+      const res = await fetch(`/api/streams/${editModal.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: editData.title,
+          slug: editData.slug,
+          scheduledStart: scheduledStartISO,
+          loopCount: editData.loopCount,
+          assetIds: editData.assetIds,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update stream");
+      }
+
+      setStreams(streams.map((s) => (s.id === editModal.id ? data : s)));
+      setEditModal(null);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to update");
+    } finally {
+      setEditLoading(false);
+    }
   }
 
   if (loading) {
@@ -517,6 +580,12 @@ export default function AdminPage() {
                     Preview
                   </a>
                   <button
+                    onClick={() => openEditModal(stream)}
+                    className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded text-sm"
+                  >
+                    Edit
+                  </button>
+                  <button
                     onClick={() => setEmbedModal(stream)}
                     className="bg-purple-600 hover:bg-purple-700 px-3 py-2 rounded text-sm"
                   >
@@ -649,6 +718,171 @@ export default function AdminPage() {
                 Preview Embed
               </a>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Stream Modal */}
+      {editModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Edit Stream</h2>
+              <button
+                onClick={() => setEditModal(null)}
+                className="text-gray-400 hover:text-white text-2xl"
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleEdit} className="space-y-4">
+              {editError && (
+                <div className="bg-red-500/20 text-red-400 p-3 rounded">
+                  {editError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Title</label>
+                  <input
+                    type="text"
+                    value={editData.title}
+                    onChange={(e) =>
+                      setEditData({ ...editData, title: e.target.value })
+                    }
+                    className="w-full bg-gray-800 rounded px-3 py-2"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Slug (URL path)
+                  </label>
+                  <input
+                    type="text"
+                    value={editData.slug}
+                    onChange={(e) =>
+                      setEditData({ ...editData, slug: e.target.value })
+                    }
+                    className="w-full bg-gray-800 rounded px-3 py-2"
+                    pattern="[a-z0-9-]+"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Date/Time Picker */}
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Scheduled Start
+                </label>
+                <DateTimePicker
+                  value={editData.scheduledStart}
+                  onChange={(value) =>
+                    setEditData({ ...editData, scheduledStart: value })
+                  }
+                />
+              </div>
+
+              {/* Asset Picker - Multiple Selection */}
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Video Assets (Playlist)
+                </label>
+                <AssetPicker
+                  assets={assets}
+                  selectedAssetId={editData.assetIds[editData.assetIds.length - 1] || ""}
+                  onSelect={(assetId) => {
+                    if (!editData.assetIds.includes(assetId)) {
+                      setEditData({ ...editData, assetIds: [...editData.assetIds, assetId] });
+                    }
+                  }}
+                />
+                {editData.assetIds.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    <p className="text-sm text-gray-400">Playlist order:</p>
+                    {editData.assetIds.map((id, index) => {
+                      const asset = assets.find((a) => a.id === id);
+                      return (
+                        <div
+                          key={id}
+                          className="flex items-center gap-2 bg-gray-800 rounded px-3 py-2"
+                        >
+                          <span className="text-gray-500 w-6">{index + 1}.</span>
+                          <span className="flex-1 truncate">
+                            {asset?.title || id}
+                          </span>
+                          <span className="text-gray-500 text-sm">
+                            {asset?.duration ? formatTime(asset.duration) : ""}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditData({
+                                ...editData,
+                                assetIds: editData.assetIds.filter(
+                                  (_, i) => i !== index
+                                ),
+                              })
+                            }
+                            className="text-red-400 hover:text-red-300"
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Loop Count */}
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Loop Count (1-10)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={editData.loopCount}
+                  onChange={(e) =>
+                    setEditData({
+                      ...editData,
+                      loopCount: Math.min(
+                        10,
+                        Math.max(1, parseInt(e.target.value) || 1)
+                      ),
+                    })
+                  }
+                  className="w-24 bg-gray-800 rounded px-3 py-2"
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  Playlist will play {editData.loopCount} time
+                  {editData.loopCount > 1 ? "s" : ""}
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-800">
+                <button
+                  type="button"
+                  onClick={() => setEditModal(null)}
+                  className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editLoading || editData.assetIds.length === 0}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 px-6 py-2 rounded-lg font-medium"
+                >
+                  {editLoading ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

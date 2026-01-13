@@ -1,0 +1,15 @@
+# Environment variables (contains secrets)
+.env
+
+# Test reports
+reports/html/
+reports/test-results/
+reports/results.json
+reports/screenshots/
+
+# Keep the reports directory
+!reports/.gitkeep
+
+# Playwright artifacts
+test-results/
+playwright-report/

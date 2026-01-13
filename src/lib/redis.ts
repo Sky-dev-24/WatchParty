@@ -64,10 +64,30 @@ export async function setCached(
 }
 
 /**
- * Check if Redis is available
+ * Check if Redis is available (sync check for env var)
  */
 export function isRedisConfigured(): boolean {
-  return !!process.env.REDIS_URL;
+  // Force runtime check - don't let Next.js optimize this away
+  const url = process.env.REDIS_URL;
+  return typeof url === "string" && url.length > 0;
+}
+
+/**
+ * Check if Redis is actually connected/connectable (async)
+ */
+export async function isRedisAvailable(): Promise<boolean> {
+  if (!isRedisConfigured()) {
+    return false;
+  }
+
+  try {
+    const redis = getRedisClient();
+    await redis.ping();
+    return true;
+  } catch (error) {
+    console.error("[Redis] Availability check failed:", error);
+    return false;
+  }
 }
 
 /**

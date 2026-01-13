@@ -16,7 +16,7 @@ export default async function Home() {
   let streams: Awaited<ReturnType<typeof prisma.stream.findMany<{ include: { items: true } }>>> = [];
   try {
     streams = await prisma.stream.findMany({
-      where: { isActive: true },
+      where: { isActive: true, endedAt: null },
       orderBy: { scheduledStart: "asc" },
       include: {
         items: {

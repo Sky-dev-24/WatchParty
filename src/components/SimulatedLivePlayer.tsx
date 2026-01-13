@@ -18,15 +18,18 @@ interface PlaybackTokens {
   "storyboard-token"?: string;
 }
 
+type TokenCache = Record<string, PlaybackTokens>;
+
 interface SimulatedLivePlayerProps {
   items: PlaylistItem[];
   loopCount: number;
   scheduledStart: string;
   title?: string;
-  syncInterval?: number;
+  syncInterval?: number; // Local sync check interval (no server calls)
   driftTolerance?: number;
   embedded?: boolean;
-  streamSlug?: string; // For polling stream status (force-stop detection)
+  streamSlug?: string; // For SSE/polling stream status (force-stop detection)
+  endedAt?: string | null;
 }
 
 // Format seconds into countdown display
@@ -36,6 +39,28 @@ function formatCountdown(seconds: number): { days: number; hours: number; minute
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = Math.floor(seconds % 60);
   return { days, hours, minutes, secs };
+}
+
+// Add jitter to intervals to prevent thundering herd
+function withJitter(interval: number, jitterPercent = 0.15): number {
+  if (!isFinite(interval)) return interval;
+  const jitter = interval * jitterPercent * (Math.random() - 0.5) * 2;
+  return Math.max(5000, Math.round(interval + jitter));
+}
+
+// Get adaptive polling interval based on stream state
+function getAdaptiveInterval(state: SimuliveState | null): number {
+  if (!state) return 30000; // 30s while loading
+
+  if (state.hasEnded) return Infinity; // Stop polling entirely
+
+  if (state.isLive) return 180000; // 3 min when live
+
+  // Countdown - more frequent as we approach start
+  if (state.secondsUntilStart > 3600) return 600000;  // 10 min if >1hr away
+  if (state.secondsUntilStart > 300) return 180000;   // 3 min if >5min away
+  if (state.secondsUntilStart > 60) return 30000;     // 30s if >1min away
+  return 10000; // 10s in final minute
 }
 
 // Countdown digit component with flip animation
@@ -55,10 +80,11 @@ export default function SimulatedLivePlayer({
   loopCount,
   scheduledStart,
   title = "Live Stream",
-  syncInterval = 5000,
+  syncInterval = 5000, // Local sync every 5s (no server calls)
   driftTolerance = 3,
   embedded = false,
   streamSlug,
+  endedAt,
 }: SimulatedLivePlayerProps) {
   // Dual player refs for seamless switching
   const playerRef0 = useRef<MuxPlayerElement | null>(null);
@@ -68,16 +94,16 @@ export default function SimulatedLivePlayer({
   const [state, setState] = useState<SimuliveState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [serverTimeOffset, setServerTimeOffset] = useState(0);
-  const [tokens, setTokens] = useState<PlaybackTokens | null>(null);
-  const [nextTokens, setNextTokens] = useState<PlaybackTokens | null>(null);
+  const [tokenCache, setTokenCache] = useState<TokenCache>({});
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [showBadge, setShowBadge] = useState(true);
   const [playerReady, setPlayerReady] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [showCountdownOverlay, setShowCountdownOverlay] = useState(true);
-  const [forceStopped, setForceStopped] = useState(false);
+  const [forceStopped, setForceStopped] = useState(() => !!endedAt);
   const [currentItemIndex, setCurrentItemIndex] = useState(0);
   const [activePlayer, setActivePlayer] = useState<0 | 1>(0); // Which player is visible
+  const activePlayerIndexRef = useRef<0 | 1>(0);
   const prevIsLiveRef = useRef(false);
   const prevItemIndexRef = useRef(0);
 
@@ -97,8 +123,24 @@ export default function SimulatedLivePlayer({
   // Get the active player ref
   const playerRef = activePlayer === 0 ? playerRef0 : playerRef1;
 
-  const lastSyncTimeRef = useRef<number>(Date.now());
-  const expectedElapsedRef = useRef<number>(0);
+  useEffect(() => {
+    activePlayerIndexRef.current = activePlayer;
+  }, [activePlayer]);
+
+  const getActivePlayer = useCallback(() => {
+    return activePlayerIndexRef.current === 0
+      ? playerRef0.current
+      : playerRef1.current;
+  }, []);
+
+  const currentTokenSet =
+    currentItem && currentItem.playbackPolicy === "signed"
+      ? tokenCache[currentItem.playbackId]
+      : null;
+  const nextTokenSet =
+    nextItem && nextItem.playbackPolicy === "signed"
+      ? tokenCache[nextItem.playbackId]
+      : null;
 
   // Calibrate server time offset
   const calibrateTime = useCallback(async () => {
@@ -107,11 +149,8 @@ export default function SimulatedLivePlayer({
       const now = Date.now();
       const offset = serverTime - now;
       setServerTimeOffset(offset);
-      lastSyncTimeRef.current = now;
-      expectedElapsedRef.current = 0;
     } catch (error) {
       console.error("Failed to fetch server time:", error);
-      setServerTimeOffset(0);
     }
   }, []);
 
@@ -119,103 +158,225 @@ export default function SimulatedLivePlayer({
     calibrateTime();
   }, [calibrateTime]);
 
+  // Adaptive time recalibration - polls more frequently near stream start, less when live/far away
   useEffect(() => {
-    const recalibrationInterval = setInterval(() => calibrateTime(), 60000);
-    return () => clearInterval(recalibrationInterval);
-  }, [calibrateTime]);
+    let timeoutId: NodeJS.Timeout;
+
+    function scheduleNextCalibration() {
+      const interval = getAdaptiveInterval(state);
+      if (!isFinite(interval)) return; // Don't schedule if stream ended
+
+      const jitteredInterval = withJitter(interval);
+      timeoutId = setTimeout(async () => {
+        await calibrateTime();
+        scheduleNextCalibration();
+      }, jitteredInterval);
+    }
+
+    scheduleNextCalibration();
+    return () => clearTimeout(timeoutId);
+  }, [calibrateTime, state?.isLive, state?.hasEnded, state?.secondsUntilStart]);
+
+  // Check stream status on visibility change (for immediate force-stop detection when returning to tab)
+  const checkStreamStatusRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         calibrateTime();
+        // Also check stream status immediately when returning to tab
+        if (checkStreamStatusRef.current) {
+          checkStreamStatusRef.current();
+        }
       }
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [calibrateTime]);
 
+  // Clock drift detection - checks periodically for sudden clock changes
+  // (e.g., timezone change, manual time adjustment)
+  // Visibility change handler covers sleep/wake scenarios
   useEffect(() => {
+    const checkInterval = 60000; // Check every 60s
+    let expectedTime = Date.now() + checkInterval;
+
     const clockCheckInterval = setInterval(() => {
       const now = Date.now();
-      const actualElapsed = now - lastSyncTimeRef.current;
-      expectedElapsedRef.current += 5000;
-      if (Math.abs(actualElapsed - expectedElapsedRef.current) > 2000) {
+      const drift = Math.abs(now - expectedTime);
+      // If clock drifted by more than 10 seconds, recalibrate
+      if (drift > 10000) {
+        console.log(`[Sync] Clock drift detected: ${drift}ms, recalibrating`);
         calibrateTime();
       }
-    }, 5000);
+      expectedTime = now + checkInterval;
+    }, checkInterval);
+
     return () => clearInterval(clockCheckInterval);
   }, [calibrateTime]);
 
   // Fetch tokens for current item if signed
   useEffect(() => {
-    if (!currentItem || currentItem.playbackPolicy !== "signed") {
-      setTokens(null);
+    if (!currentItem) return;
+    if (currentItem.playbackPolicy !== "signed") {
+      setTokenError(null);
       return;
     }
 
+    const playbackId = currentItem.playbackId;
+    if (tokenCache[playbackId]) {
+      setTokenError(null);
+      return;
+    }
+
+    let cancelled = false;
     async function fetchTokens() {
       try {
-        const res = await fetch(`/api/tokens/${currentItem.playbackId}`);
+        const res = await fetch(`/api/tokens/${playbackId}`);
         if (!res.ok) throw new Error("Failed to fetch tokens");
         const data = await res.json();
-        setTokens(data);
-        setTokenError(null);
+        if (!cancelled) {
+          setTokenCache((prev) => ({ ...prev, [playbackId]: data }));
+          setTokenError(null);
+        }
       } catch (error) {
         console.error("Failed to fetch playback tokens:", error);
-        setTokenError("Unable to load signed video");
+        if (!cancelled) {
+          setTokenError("Unable to load signed video");
+        }
       }
     }
     fetchTokens();
-  }, [currentItem]);
+    return () => {
+      cancelled = true;
+    };
+  }, [currentItem, tokenCache]);
 
   // Preload tokens for next item if signed
   useEffect(() => {
     if (!nextItem || nextItem.playbackPolicy !== "signed") {
-      setNextTokens(null);
       return;
     }
 
     const playbackId = nextItem.playbackId;
+    if (tokenCache[playbackId]) return;
+
+    let cancelled = false;
     async function fetchNextTokens() {
       try {
         const res = await fetch(`/api/tokens/${playbackId}`);
         if (!res.ok) return;
         const data = await res.json();
-        setNextTokens(data);
+        if (!cancelled) {
+          setTokenCache((prev) => ({ ...prev, [playbackId]: data }));
+        }
       } catch (error) {
         console.error("Failed to prefetch next tokens:", error);
       }
     }
     fetchNextTokens();
-  }, [nextItem]);
+    return () => {
+      cancelled = true;
+    };
+  }, [nextItem, tokenCache]);
 
-  // Poll for stream status (force-stop detection)
+  // SSE for instant force-stop detection, with polling fallback
   useEffect(() => {
-    if (!streamSlug) return;
+    if (!streamSlug) {
+      checkStreamStatusRef.current = null;
+      return;
+    }
 
+    let eventSource: EventSource | null = null;
+    let pollTimeoutId: NodeJS.Timeout | null = null;
+    let usePollingFallback = false;
+
+    // Polling fallback function
     async function checkStreamStatus() {
       try {
         const res = await fetch(`/api/streams/${streamSlug}/status`);
         if (!res.ok) return;
         const data = await res.json();
-        if (data.endedAt) {
-          setForceStopped(true);
-          // Pause the player
-          const player = playerRef.current;
+        const ended = !!data.endedAt;
+        setForceStopped(ended);
+        if (ended) {
+          const player = getActivePlayer();
           if (player) player.pause();
         }
       } catch (error) {
-        console.error("Failed to check stream status:", error);
+        console.error("[Polling] Failed to check stream status:", error);
       }
     }
 
-    // Check immediately on mount
-    checkStreamStatus();
+    // Store ref for visibility change handler
+    checkStreamStatusRef.current = checkStreamStatus;
 
-    // Poll at syncInterval
-    const pollInterval = setInterval(checkStreamStatus, syncInterval);
-    return () => clearInterval(pollInterval);
-  }, [streamSlug, syncInterval]);
+    // Schedule next poll with jitter (only used as fallback)
+    function scheduleNextPoll() {
+      if (!usePollingFallback) return;
+      const interval = withJitter(30000); // 30s fallback polling
+      pollTimeoutId = setTimeout(() => {
+        checkStreamStatus();
+        scheduleNextPoll();
+      }, interval);
+    }
+
+    // Start polling fallback
+    function startPollingFallback() {
+      if (usePollingFallback) return;
+      usePollingFallback = true;
+      console.log("[SSE] Falling back to polling");
+      checkStreamStatus(); // Immediate check
+      scheduleNextPoll();
+    }
+
+    // Try SSE first (only when stream might be live)
+    function startSSE() {
+      eventSource = new EventSource(`/api/streams/${streamSlug}/events`);
+
+      eventSource.addEventListener("connected", (e) => {
+        const data = JSON.parse(e.data);
+        if (data.fallback) {
+          // Server indicated SSE is not available (no Redis)
+          console.log("[SSE] Server indicated fallback mode");
+          eventSource?.close();
+          startPollingFallback();
+        } else {
+          console.log("[SSE] Connected to stream events");
+        }
+      });
+
+      eventSource.addEventListener("stopped", (e) => {
+        const data = JSON.parse(e.data);
+        console.log("[SSE] Stream stopped:", data);
+        setForceStopped(true);
+        getActivePlayer()?.pause();
+        eventSource?.close();
+      });
+
+      eventSource.addEventListener("resumed", () => {
+        console.log("[SSE] Stream resumed");
+        setForceStopped(false);
+      });
+
+      eventSource.onerror = () => {
+        console.warn("[SSE] Connection error");
+        eventSource?.close();
+        eventSource = null;
+        startPollingFallback();
+      };
+    }
+
+    // Check initial status, then start SSE
+    checkStreamStatus();
+    startSSE();
+
+    return () => {
+      eventSource?.close();
+      if (pollTimeoutId) clearTimeout(pollTimeoutId);
+      checkStreamStatusRef.current = null;
+    };
+  }, [streamSlug, getActivePlayer]);
 
   const getSyncedTime = useCallback(() => {
     return Date.now() + serverTimeOffset;
@@ -234,12 +395,6 @@ export default function SimulatedLivePlayer({
 
       // Switch to the other player for seamless transition
       setActivePlayer(prev => prev === 0 ? 1 : 0);
-
-      // Promote preloaded tokens to current
-      if (nextTokens) {
-        setTokens(nextTokens);
-        setNextTokens(null);
-      }
 
       setCurrentItemIndex(currentState.currentItemIndex);
 
@@ -271,7 +426,7 @@ export default function SimulatedLivePlayer({
     }
 
     setIsLoading(false);
-  }, [config, getSyncedTime, driftTolerance, items, nextTokens, activePlayer]);
+  }, [config, getSyncedTime, driftTolerance, items, activePlayer]);
 
   useEffect(() => {
     const initialTimer = setTimeout(syncPlayer, 500);
@@ -303,7 +458,7 @@ export default function SimulatedLivePlayer({
   const handlePause = useCallback(() => {
     const currentState = calculateSimuliveState(getSyncedTime(), config);
     if (currentState.isLive) {
-      const player = playerRef.current;
+      const player = getActivePlayer();
       if (player) {
         setTimeout(() => {
           if (player.paused && currentState.isLive) {
@@ -312,7 +467,7 @@ export default function SimulatedLivePlayer({
         }, 100);
       }
     }
-  }, [config, getSyncedTime]);
+  }, [config, getSyncedTime, getActivePlayer]);
 
   const resetBadgeTimer = useCallback(() => {
     setShowBadge(true);
@@ -486,7 +641,9 @@ export default function SimulatedLivePlayer({
       )}
 
       {/* Dual Players for seamless switching */}
-      {currentItem && (currentItem.playbackPolicy === "public" || tokens) && !tokenError && (
+      {currentItem &&
+        (currentItem.playbackPolicy === "public" || currentTokenSet) &&
+        !tokenError && (
         <>
           {/* Player 0 */}
           <MuxPlayer
@@ -508,18 +665,18 @@ export default function SimulatedLivePlayer({
             onLoadedMetadata={activePlayer === 0 ? handleLoadedMetadata : undefined}
             onSeeking={activePlayer === 0 ? handleSeeking : undefined}
             onPause={activePlayer === 0 ? handlePause : undefined}
-            {...(activePlayer === 0 && tokens && {
+            {...(activePlayer === 0 && currentTokenSet && {
               tokens: {
-                playback: tokens["playback-token"],
-                thumbnail: tokens["thumbnail-token"],
-                storyboard: tokens["storyboard-token"],
+                playback: currentTokenSet["playback-token"],
+                thumbnail: currentTokenSet["thumbnail-token"],
+                storyboard: currentTokenSet["storyboard-token"],
               },
             })}
-            {...(activePlayer !== 0 && nextTokens && {
+            {...(activePlayer !== 0 && nextTokenSet && {
               tokens: {
-                playback: nextTokens["playback-token"],
-                thumbnail: nextTokens["thumbnail-token"],
-                storyboard: nextTokens["storyboard-token"],
+                playback: nextTokenSet["playback-token"],
+                thumbnail: nextTokenSet["thumbnail-token"],
+                storyboard: nextTokenSet["storyboard-token"],
               },
             })}
           />
@@ -544,18 +701,18 @@ export default function SimulatedLivePlayer({
               onLoadedMetadata={activePlayer === 1 ? handleLoadedMetadata : undefined}
               onSeeking={activePlayer === 1 ? handleSeeking : undefined}
               onPause={activePlayer === 1 ? handlePause : undefined}
-              {...(activePlayer === 1 && tokens && {
+              {...(activePlayer === 1 && currentTokenSet && {
                 tokens: {
-                  playback: tokens["playback-token"],
-                  thumbnail: tokens["thumbnail-token"],
-                  storyboard: tokens["storyboard-token"],
+                  playback: currentTokenSet["playback-token"],
+                  thumbnail: currentTokenSet["thumbnail-token"],
+                  storyboard: currentTokenSet["storyboard-token"],
                 },
               })}
-              {...(activePlayer !== 1 && nextTokens && {
+              {...(activePlayer !== 1 && nextTokenSet && {
                 tokens: {
-                  playback: nextTokens["playback-token"],
-                  thumbnail: nextTokens["thumbnail-token"],
-                  storyboard: nextTokens["storyboard-token"],
+                  playback: nextTokenSet["playback-token"],
+                  thumbnail: nextTokenSet["thumbnail-token"],
+                  storyboard: nextTokenSet["storyboard-token"],
                 },
               })}
             />

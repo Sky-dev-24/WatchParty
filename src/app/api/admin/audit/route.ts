@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isApiAuthenticated } from "@/lib/auth";
 import { getAuditLogs, AuditEvent } from "@/lib/audit";
+import { isRedisConfigured } from "@/lib/redis";
 
 // GET /api/admin/audit - Get audit logs (admin only)
 // Query params:
@@ -9,6 +10,13 @@ import { getAuditLogs, AuditEvent } from "@/lib/audit";
 //   - limit: number of records (default 100, max 500)
 //   - offset: pagination offset
 export async function GET(request: NextRequest) {
+  if (!isRedisConfigured()) {
+    return NextResponse.json(
+      { error: "Redis is required for admin authentication." },
+      { status: 503 }
+    );
+  }
+
   // Require admin authentication
   if (!(await isApiAuthenticated(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

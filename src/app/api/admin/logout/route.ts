@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_COOKIE_NAME, deleteAdminSession } from "@/lib/auth";
+import { isRedisConfigured } from "@/lib/redis";
 
 export async function POST(request: NextRequest) {
+  if (!isRedisConfigured()) {
+    return NextResponse.json(
+      { error: "Redis is required for admin authentication." },
+      { status: 503 }
+    );
+  }
+
   // Delete session from Redis if it exists
   const adminCookie = request.cookies.get(ADMIN_COOKIE_NAME);
   if (adminCookie?.value) {

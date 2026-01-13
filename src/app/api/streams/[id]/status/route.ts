@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import { getCached, setCached } from "@/lib/redis";
+import { getCached, setCached, isRedisConfigured } from "@/lib/redis";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -15,6 +15,13 @@ const STATUS_CACHE_TTL = 2; // 2 seconds - balance between responsiveness and lo
 
 // GET /api/streams/[id]/status - Lightweight status check for polling
 export async function GET(request: NextRequest, { params }: RouteParams) {
+  if (!isRedisConfigured()) {
+    return NextResponse.json(
+      { error: "Redis is required." },
+      { status: 503 }
+    );
+  }
+
   try {
     const { id } = await params;
     const cacheKey = `stream:${id}:status`;

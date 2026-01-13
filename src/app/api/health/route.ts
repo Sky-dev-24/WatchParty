@@ -22,24 +22,20 @@ export async function GET() {
     };
   }
 
-  // Check Redis connection (if configured)
-  if (isRedisConfigured()) {
+  // Check Redis connection
+  if (!isRedisConfigured()) {
+    checks.redis = { status: "fail", error: "Redis not configured" };
+  } else {
     try {
       const redis = getRedisClient();
-      if (redis) {
-        await redis.ping();
-        checks.redis = { status: "pass" };
-      } else {
-        checks.redis = { status: "fail", error: "Redis client not initialized" };
-      }
+      await redis.ping();
+      checks.redis = { status: "pass" };
     } catch (error) {
       checks.redis = {
         status: "fail",
         error: error instanceof Error ? error.message : "Redis connection failed",
       };
     }
-  } else {
-    checks.redis = { status: "skip", error: "Redis not configured (optional)" };
   }
 
   // Check Mux credentials are set

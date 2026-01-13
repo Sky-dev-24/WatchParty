@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getAssetInfo } from "@/lib/mux";
 import { isApiAuthenticated, getClientIp } from "@/lib/auth";
-import { getCached, setCached, deleteCached } from "@/lib/redis";
+import { getCached, setCached, deleteCached, isRedisConfigured } from "@/lib/redis";
 import { logStreamCreated } from "@/lib/audit";
 
 const STREAMS_CACHE_KEY = "streams:all";
@@ -10,6 +10,13 @@ const STREAMS_CACHE_TTL = 30; // 30 seconds
 
 // GET /api/streams - List all streams (with Redis caching)
 export async function GET() {
+  if (!isRedisConfigured()) {
+    return NextResponse.json(
+      { error: "Redis is required." },
+      { status: 503 }
+    );
+  }
+
   try {
     // Try to get from cache first
     const cached = await getCached<unknown[]>(STREAMS_CACHE_KEY);
@@ -51,6 +58,13 @@ async function invalidateStreamsCache() {
 
 // POST /api/streams - Create a new stream
 export async function POST(request: NextRequest) {
+  if (!isRedisConfigured()) {
+    return NextResponse.json(
+      { error: "Redis is required for admin authentication." },
+      { status: 503 }
+    );
+  }
+
   if (!(await isApiAuthenticated(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getAssetInfo } from "@/lib/mux";
 import { isApiAuthenticated, getClientIp } from "@/lib/auth";
-import { deleteCached } from "@/lib/redis";
+import { deleteCached, publishStreamEvent, isRedisConfigured } from "@/lib/redis";
 import { logStreamUpdated, logStreamDeleted } from "@/lib/audit";
 
 const STREAMS_CACHE_KEY = "streams:all";
@@ -52,6 +52,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 // PATCH /api/streams/[id] - Update a stream
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  if (!isRedisConfigured()) {
+    return NextResponse.json(
+      { error: "Redis is required for admin authentication." },
+      { status: 503 }
+    );
+  }
+
   if (!(await isApiAuthenticated(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -213,6 +220,24 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       await invalidateStatusCache(stream.id, stream.slug);
     }
 
+    // Publish SSE events for real-time updates to viewers
+    if (updateData.endedAt !== undefined) {
+      if (updateData.endedAt) {
+        // Stream was stopped
+        await publishStreamEvent(stream.slug, {
+          type: "stopped",
+          timestamp: Date.now(),
+          data: { endedAt: stream.endedAt },
+        });
+      } else {
+        // Stream was resumed (endedAt set to null)
+        await publishStreamEvent(stream.slug, {
+          type: "resumed",
+          timestamp: Date.now(),
+        });
+      }
+    }
+
     return NextResponse.json(stream);
   } catch (error) {
     console.error("Failed to update stream:", error);
@@ -225,6 +250,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
 // DELETE /api/streams/[id] - Delete a stream
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  if (!isRedisConfigured()) {
+    return NextResponse.json(
+      { error: "Redis is required for admin authentication." },
+      { status: 503 }
+    );
+  }
+
   if (!(await isApiAuthenticated(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

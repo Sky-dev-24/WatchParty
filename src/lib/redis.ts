@@ -2,13 +2,22 @@ import Redis from "ioredis";
 
 let redisClient: Redis | null = null;
 
-export function getRedisClient(): Redis | null {
-  if (!process.env.REDIS_URL) {
-    return null;
+// Channel prefix for stream events pub/sub
+export const STREAM_EVENTS_CHANNEL = "stream:events:";
+
+function requireRedisUrl(): string {
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) {
+    throw new Error("REDIS_URL is required");
   }
+  return redisUrl;
+}
+
+export function getRedisClient(): Redis {
+  const redisUrl = requireRedisUrl();
 
   if (!redisClient) {
-    redisClient = new Redis(process.env.REDIS_URL, {
+    redisClient = new Redis(redisUrl, {
       maxRetriesPerRequest: 3,
       lazyConnect: true,
       retryStrategy: (times) => {
@@ -34,18 +43,11 @@ export function getRedisClient(): Redis | null {
  */
 export async function getCached<T>(key: string): Promise<T | null> {
   const redis = getRedisClient();
-  if (!redis) return null;
-
-  try {
-    const value = await redis.get(key);
-    if (value) {
-      return JSON.parse(value) as T;
-    }
-    return null;
-  } catch (error) {
-    console.error("[Redis] Get error:", error);
-    return null;
+  const value = await redis.get(key);
+  if (value) {
+    return JSON.parse(value) as T;
   }
+  return null;
 }
 
 /**
@@ -57,15 +59,8 @@ export async function setCached(
   ttlSeconds: number
 ): Promise<boolean> {
   const redis = getRedisClient();
-  if (!redis) return false;
-
-  try {
-    await redis.setex(key, ttlSeconds, JSON.stringify(value));
-    return true;
-  } catch (error) {
-    console.error("[Redis] Set error:", error);
-    return false;
-  }
+  await redis.setex(key, ttlSeconds, JSON.stringify(value));
+  return true;
 }
 
 /**
@@ -80,15 +75,8 @@ export function isRedisConfigured(): boolean {
  */
 export async function deleteCached(key: string): Promise<boolean> {
   const redis = getRedisClient();
-  if (!redis) return false;
-
-  try {
-    await redis.del(key);
-    return true;
-  } catch (error) {
-    console.error("[Redis] Delete error:", error);
-    return false;
-  }
+  await redis.del(key);
+  return true;
 }
 
 // ============================================
@@ -103,19 +91,12 @@ const SESSION_TTL = 60 * 60 * 24; // 24 hours
  */
 export async function createSession(sessionId: string): Promise<boolean> {
   const redis = getRedisClient();
-  if (!redis) return false;
-
-  try {
-    await redis.setex(
-      `${SESSION_PREFIX}${sessionId}`,
-      SESSION_TTL,
-      JSON.stringify({ createdAt: Date.now() })
-    );
-    return true;
-  } catch (error) {
-    console.error("[Redis] Create session error:", error);
-    return false;
-  }
+  await redis.setex(
+    `${SESSION_PREFIX}${sessionId}`,
+    SESSION_TTL,
+    JSON.stringify({ createdAt: Date.now() })
+  );
+  return true;
 }
 
 /**
@@ -123,15 +104,8 @@ export async function createSession(sessionId: string): Promise<boolean> {
  */
 export async function validateSession(sessionId: string): Promise<boolean> {
   const redis = getRedisClient();
-  if (!redis) return false;
-
-  try {
-    const exists = await redis.exists(`${SESSION_PREFIX}${sessionId}`);
-    return exists === 1;
-  } catch (error) {
-    console.error("[Redis] Validate session error:", error);
-    return false;
-  }
+  const exists = await redis.exists(`${SESSION_PREFIX}${sessionId}`);
+  return exists === 1;
 }
 
 /**
@@ -161,39 +135,28 @@ interface RateLimitResult {
 export async function checkLoginRateLimit(ip: string): Promise<RateLimitResult> {
   const redis = getRedisClient();
 
-  // If Redis not configured, allow (fallback - not ideal)
-  if (!redis) {
-    return { allowed: true, attemptsRemaining: MAX_LOGIN_ATTEMPTS };
-  }
-
   const key = `${RATE_LIMIT_PREFIX}${ip}`;
 
-  try {
-    const attempts = await redis.incr(key);
+  const attempts = await redis.incr(key);
 
-    // Set expiry on first attempt
-    if (attempts === 1) {
-      await redis.expire(key, RATE_LIMIT_WINDOW);
-    }
-
-    if (attempts > MAX_LOGIN_ATTEMPTS) {
-      const ttl = await redis.ttl(key);
-      return {
-        allowed: false,
-        attemptsRemaining: 0,
-        retryAfterSeconds: ttl > 0 ? ttl : RATE_LIMIT_WINDOW,
-      };
-    }
-
-    return {
-      allowed: true,
-      attemptsRemaining: MAX_LOGIN_ATTEMPTS - attempts,
-    };
-  } catch (error) {
-    console.error("[Redis] Rate limit error:", error);
-    // On error, allow the request (fail open)
-    return { allowed: true, attemptsRemaining: MAX_LOGIN_ATTEMPTS };
+  // Set expiry on first attempt
+  if (attempts === 1) {
+    await redis.expire(key, RATE_LIMIT_WINDOW);
   }
+
+  if (attempts > MAX_LOGIN_ATTEMPTS) {
+    const ttl = await redis.ttl(key);
+    return {
+      allowed: false,
+      attemptsRemaining: 0,
+      retryAfterSeconds: ttl > 0 ? ttl : RATE_LIMIT_WINDOW,
+    };
+  }
+
+  return {
+    allowed: true,
+    attemptsRemaining: MAX_LOGIN_ATTEMPTS - attempts,
+  };
 }
 
 /**
@@ -201,11 +164,45 @@ export async function checkLoginRateLimit(ip: string): Promise<RateLimitResult> 
  */
 export async function resetLoginRateLimit(ip: string): Promise<void> {
   const redis = getRedisClient();
-  if (!redis) return;
+  await redis.del(`${RATE_LIMIT_PREFIX}${ip}`);
+}
 
-  try {
-    await redis.del(`${RATE_LIMIT_PREFIX}${ip}`);
-  } catch (error) {
-    console.error("[Redis] Reset rate limit error:", error);
-  }
+// ============================================
+// Pub/Sub for Stream Events (SSE)
+// ============================================
+
+export interface StreamEvent {
+  type: "stopped" | "resumed";
+  timestamp: number;
+  data?: Record<string, unknown>;
+}
+
+/**
+ * Publish a stream event to all subscribers
+ */
+export async function publishStreamEvent(
+  slug: string,
+  event: StreamEvent
+): Promise<boolean> {
+  const redis = getRedisClient();
+  await redis.publish(`${STREAM_EVENTS_CHANNEL}${slug}`, JSON.stringify(event));
+  return true;
+}
+
+/**
+ * Create a NEW Redis connection for subscribing
+ * ioredis requires a separate connection for pub/sub mode
+ */
+export function createSubscriberClient(): Redis {
+  const redisUrl = requireRedisUrl();
+  const subscriber = new Redis(redisUrl, {
+    maxRetriesPerRequest: 3,
+    lazyConnect: true,
+  });
+
+  subscriber.on("error", (err) => {
+    console.error("[Redis Subscriber] Connection error:", err.message);
+  });
+
+  return subscriber;
 }

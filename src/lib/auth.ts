@@ -65,18 +65,19 @@ export function generateSessionToken(): string {
  * Returns null if session creation failed
  */
 export async function createAdminSession(): Promise<string | null> {
-  // Redis is required for secure sessions
   if (!isRedisConfigured()) {
-    console.warn(
-      "[Auth] Redis not configured - using fallback session (less secure)"
-    );
-    // Fallback: return a signed token that doesn't need Redis
-    // This is less secure but allows operation without Redis
-    return generateSessionToken();
+    console.error("[Auth] Redis is required for admin sessions");
+    return null;
   }
 
   const sessionToken = generateSessionToken();
-  const created = await createSession(sessionToken);
+  let created = false;
+  try {
+    created = await createSession(sessionToken);
+  } catch (error) {
+    console.error("[Auth] Failed to create session in Redis:", error);
+    return null;
+  }
 
   if (!created) {
     console.error("[Auth] Failed to create session in Redis");
@@ -99,12 +100,17 @@ export async function validateAdminSession(
     return false;
   }
 
-  // If Redis not configured, accept any valid-format token (fallback mode)
+  // Redis is required for admin sessions
   if (!isRedisConfigured()) {
-    return true;
+    return false;
   }
 
-  return validateSession(sessionToken);
+  try {
+    return validateSession(sessionToken);
+  } catch (error) {
+    console.error("[Auth] Failed to validate session:", error);
+    return false;
+  }
 }
 
 /**
@@ -112,7 +118,11 @@ export async function validateAdminSession(
  */
 export async function deleteAdminSession(sessionToken: string): Promise<void> {
   if (isRedisConfigured()) {
-    await deleteSession(sessionToken);
+    try {
+      await deleteSession(sessionToken);
+    } catch (error) {
+      console.error("[Auth] Failed to delete session:", error);
+    }
   }
 }
 

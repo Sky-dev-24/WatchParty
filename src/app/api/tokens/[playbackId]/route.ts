@@ -14,6 +14,13 @@ const TOKEN_CACHE_TTL = 6 * 60 * 60;
 export async function GET(request: NextRequest, { params }: RouteParams) {
   const { playbackId } = await params;
 
+  if (!isRedisConfigured()) {
+    return NextResponse.json(
+      { error: "Redis is required." },
+      { status: 503 }
+    );
+  }
+
   if (!isSigningConfigured()) {
     return NextResponse.json(
       { error: "Signing keys not configured" },
@@ -24,22 +31,17 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   const cacheKey = `tokens:${playbackId}`;
 
   // Try to get cached tokens first
-  if (isRedisConfigured()) {
-    const cachedTokens = await getCached<Record<string, string>>(cacheKey);
-    if (cachedTokens) {
-      console.log(`[Tokens] Cache HIT for ${playbackId}`);
-      return NextResponse.json(cachedTokens);
-    }
-    console.log(`[Tokens] Cache MISS for ${playbackId}`);
+  const cachedTokens = await getCached<Record<string, string>>(cacheKey);
+  if (cachedTokens) {
+    console.log(`[Tokens] Cache HIT for ${playbackId}`);
+    return NextResponse.json(cachedTokens);
   }
+  console.log(`[Tokens] Cache MISS for ${playbackId}`);
 
   try {
     const tokens = await generatePlaybackTokens(playbackId);
 
-    // Cache the tokens if Redis is available
-    if (isRedisConfigured()) {
-      await setCached(cacheKey, tokens, TOKEN_CACHE_TTL);
-    }
+    await setCached(cacheKey, tokens, TOKEN_CACHE_TTL);
 
     return NextResponse.json(tokens);
   } catch (error) {

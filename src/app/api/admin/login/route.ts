@@ -6,7 +6,7 @@ import {
   ADMIN_COOKIE_NAME,
   COOKIE_MAX_AGE,
 } from "@/lib/auth";
-import { checkLoginRateLimit, resetLoginRateLimit } from "@/lib/redis";
+import { checkLoginRateLimit, resetLoginRateLimit, isRedisConfigured } from "@/lib/redis";
 import {
   logFailedLogin,
   logSuccessfulLogin,
@@ -14,11 +14,27 @@ import {
 } from "@/lib/audit";
 
 export async function POST(request: NextRequest) {
+  if (!isRedisConfigured()) {
+    return NextResponse.json(
+      { error: "Redis is required for admin authentication." },
+      { status: 503 }
+    );
+  }
+
   const clientIp = getClientIp(request);
   const userAgent = request.headers.get("user-agent") || undefined;
 
-  // Check rate limit BEFORE processing login
-  const rateLimit = await checkLoginRateLimit(clientIp);
+  let rateLimit: Awaited<ReturnType<typeof checkLoginRateLimit>>;
+  try {
+    // Check rate limit BEFORE processing login
+    rateLimit = await checkLoginRateLimit(clientIp);
+  } catch (error) {
+    console.error("[Auth] Rate limit check failed:", error);
+    return NextResponse.json(
+      { error: "Authentication unavailable. Please try again later." },
+      { status: 503 }
+    );
+  }
 
   if (!rateLimit.allowed) {
     // Log rate-limited attempt
@@ -74,7 +90,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Reset rate limit on successful login
-    await resetLoginRateLimit(clientIp);
+    try {
+      await resetLoginRateLimit(clientIp);
+    } catch (error) {
+      console.error("[Auth] Failed to reset rate limit:", error);
+    }
 
     // Log successful login
     await logSuccessfulLogin(clientIp, userAgent);

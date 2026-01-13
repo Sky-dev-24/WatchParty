@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { listAssets, listAllAssets } from "@/lib/mux";
 import { isMuxConfigured } from "@/lib/config";
 import { isApiAuthenticated } from "@/lib/auth";
+import { isRedisConfigured } from "@/lib/redis";
 
 // GET /api/mux/assets - List assets from Mux account (admin only)
 // Query params:
@@ -9,6 +10,13 @@ import { isApiAuthenticated } from "@/lib/auth";
 //   - cursor: string - cursor for next page
 //   - all: "true" - fetch all assets (default for backward compatibility)
 export async function GET(request: NextRequest) {
+  if (!isRedisConfigured()) {
+    return NextResponse.json(
+      { error: "Redis is required for admin authentication." },
+      { status: 503 }
+    );
+  }
+
   // Require admin authentication
   if (!(await isApiAuthenticated(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

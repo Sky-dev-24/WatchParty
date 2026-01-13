@@ -58,6 +58,7 @@ export default async function EmbedPage({ params }: PageProps) {
         driftTolerance={stream.driftTolerance}
         embedded
         streamSlug={stream.slug}
+        endedAt={stream.endedAt ? stream.endedAt.toISOString() : null}
       />
     </div>
   );

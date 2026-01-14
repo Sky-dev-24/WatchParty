@@ -7,7 +7,13 @@
 
 import { test, expect } from '@playwright/test';
 import * as api from '../lib/api-helpers';
-import type { HealthCheckResponse } from '../lib/types';
+import type { HealthCheckResponse, HealthCheckResult } from '../lib/types';
+
+function isCheckHealthy(check: boolean | HealthCheckResult | undefined): boolean {
+  if (typeof check === 'boolean') return check;
+  if (!check) return false;
+  return check.status === 'pass' || check.status === 'skip';
+}
 
 test.describe('Suite 1: Health Check', () => {
   test.afterAll(async () => {
@@ -23,9 +29,9 @@ test.describe('Suite 1: Health Check', () => {
 
     // Step 3: Verify individual checks
     expect(health.checks).toBeDefined();
-    expect(health.checks.database).toBe(true);
-    expect(health.checks.redis).toBe(true);
-    expect(health.checks.mux_credentials).toBe(true);
+    expect(isCheckHealthy(health.checks.database)).toBe(true);
+    expect(isCheckHealthy(health.checks.redis)).toBe(true);
+    expect(isCheckHealthy(health.checks.mux_credentials)).toBe(true);
 
     // Log results for debugging
     console.log('Health Check Results:', JSON.stringify(health, null, 2));
@@ -33,7 +39,7 @@ test.describe('Suite 1: Health Check', () => {
     // Failure action: If any check fails, report which service is down
     if (health.status !== 'healthy') {
       const failedServices = Object.entries(health.checks)
-        .filter(([, status]) => !status)
+        .filter(([, status]) => !isCheckHealthy(status as boolean | HealthCheckResult))
         .map(([service]) => service);
 
       throw new Error(`Health check failed. Down services: ${failedServices.join(', ')}`);

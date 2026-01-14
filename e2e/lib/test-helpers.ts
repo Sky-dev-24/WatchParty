@@ -6,8 +6,7 @@ import * as api from './api-helpers';
 
 // Navigation helpers
 export async function navigateTo(page: Page, path: string): Promise<void> {
-  await page.goto(path);
-  await page.waitForLoadState('networkidle');
+  await page.goto(path, { waitUntil: 'domcontentloaded' });
 }
 
 export async function navigateToHome(page: Page): Promise<void> {
@@ -36,10 +35,15 @@ export async function navigateToAuditLogs(page: Page): Promise<void> {
 
 // Authentication helpers
 export async function loginViaUI(page: Page, password: string = config.adminPassword): Promise<boolean> {
+  if (!password) {
+    throw new Error('ADMIN_PASSWORD is not set');
+  }
   await navigateToAdminLogin(page);
 
-  // Fill password
-  await page.fill(selectors.loginPasswordInput, password);
+  // Fill password - use click + pressSequentially for React controlled inputs
+  const passwordInput = page.locator(selectors.loginPasswordInput);
+  await passwordInput.click();
+  await passwordInput.pressSequentially(password);
 
   // Click login
   await page.click(selectors.loginButton);
@@ -66,7 +70,22 @@ export async function ensureLoggedIn(page: Page): Promise<void> {
 
   // If redirected to login, perform login
   if (page.url().includes('/login')) {
-    await loginViaUI(page);
+    const success = await loginViaUI(page);
+    if (!success) {
+      let errorText = '';
+      const errorLocator = page.locator(selectors.loginError).first();
+      if (await errorLocator.count()) {
+        errorText = (await errorLocator.textContent())?.trim() || '';
+      }
+      if (!errorText) {
+        const pageText = await getPageText(page);
+        if (pageText.toLowerCase().includes('too many')) {
+          errorText = 'Too many login attempts. Rate limited.';
+        }
+      }
+      const suffix = errorText ? `: ${errorText}` : '';
+      throw new Error(`Admin login failed${suffix}`);
+    }
   }
 }
 
@@ -139,6 +158,10 @@ export async function findStreamRow(page: Page, titleOrSlug: string): Promise<Re
 
   for (let i = 0; i < count; i++) {
     const row = rows.nth(i);
+    const slug = await row.getAttribute("data-stream-slug");
+    if (slug && slug === titleOrSlug) {
+      return row;
+    }
     const text = await row.textContent();
     if (text?.includes(titleOrSlug)) {
       return row;

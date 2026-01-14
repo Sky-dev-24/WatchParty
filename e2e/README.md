@@ -30,6 +30,7 @@ npm run test:e2e:debug
    ```bash
    ADMIN_PASSWORD=your-password  # Required for admin tests
    BASE_URL=https://simulive.cloudysky.xyz  # Default target
+   SKIP_ADMIN_PASSWORD_CHECK=true  # Optional; skip admin checks for health-only runs
    ```
 
 3. **For Local Testing**:
@@ -70,6 +71,13 @@ npm run test:e2e -- tests/02-authentication.spec.ts
 ### Specific Test
 ```bash
 npm run test:e2e -- --grep "2.1: Admin Login"
+```
+
+### Rate Limit Tests (Run at the End)
+Rate limit tests are tagged with `@ratelimit` and run as a separate project after the main suite.
+To run only rate limit tests:
+```bash
+npm run test:e2e -- --grep "@ratelimit"
 ```
 
 ### With Visual UI
@@ -140,10 +148,11 @@ e2e/
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BASE_URL` | `http://localhost:3000` | Application URL |
-| `ADMIN_PASSWORD` | `test-password` | Admin authentication |
+| `BASE_URL` | `https://simulive.cloudysky.xyz` | Application URL |
+| `ADMIN_PASSWORD` | - | Admin authentication |
 | `START_SERVER` | - | If set, starts dev server automatically |
 | `CI` | - | Enables CI mode (retries, strict) |
+| `SKIP_ADMIN_PASSWORD_CHECK` | - | Skip admin password verification in setup |
 
 ### Selectors
 
@@ -180,6 +189,7 @@ npx playwright show-report e2e/reports/html
 ### Authentication Tests Fail
 - Verify `ADMIN_PASSWORD` matches server configuration
 - Check for rate limiting (wait 15 minutes or clear Redis)
+- Rate limit tests are tagged with `@ratelimit` and run after the main suite
 
 ### Stream Tests Skip
 - Ensure Mux assets exist in your account

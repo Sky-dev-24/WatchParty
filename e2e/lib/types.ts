@@ -30,7 +30,8 @@ export interface Stream {
   loopCount: number;
   syncInterval: number;
   driftTolerance: number;
-  playlistItems: PlaylistItem[];
+  playlistItems?: PlaylistItem[];
+  items?: PlaylistItem[];
   createdAt: string;
   updatedAt: string;
 }
@@ -48,8 +49,10 @@ export interface PlaylistItem {
 export interface MuxAsset {
   id: string;
   status: string;
-  duration: number;
-  playback_ids: Array<{
+  duration?: number | null;
+  playbackId?: string | null;
+  playbackPolicy?: string | null;
+  playback_ids?: Array<{
     id: string;
     policy: string;
   }>;
@@ -62,15 +65,21 @@ export interface AuditLog {
   ipAddress: string;
   userAgent: string;
   details: Record<string, unknown>;
-  createdAt: string;
+  timestamp?: string;
+  createdAt?: string;
 }
+
+export type HealthCheckResult = {
+  status: 'pass' | 'fail' | 'skip';
+  error?: string;
+};
 
 export interface HealthCheckResponse {
   status: 'healthy' | 'unhealthy';
   checks: {
-    database: boolean;
-    redis: boolean;
-    mux_credentials: boolean;
+    database: boolean | HealthCheckResult;
+    redis: boolean | HealthCheckResult;
+    mux_credentials: boolean | HealthCheckResult;
   };
 }
 

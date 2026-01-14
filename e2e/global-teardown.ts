@@ -7,7 +7,7 @@
 import { request, type FullConfig } from '@playwright/test';
 
 const BASE_URL = process.env.BASE_URL || 'https://simulive.cloudysky.xyz';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'test-password';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 async function globalTeardown(config: FullConfig): Promise<void> {
   console.log('\n========================================');
@@ -17,6 +17,11 @@ async function globalTeardown(config: FullConfig): Promise<void> {
   const apiContext = await request.newContext({ baseURL: BASE_URL });
 
   try {
+    if (!ADMIN_PASSWORD) {
+      console.log('ADMIN_PASSWORD not set - skipping cleanup login');
+      await apiContext.dispose();
+      return;
+    }
     // Login to clean up test data
     const loginResponse = await apiContext.post('/api/admin/login', {
       data: { password: ADMIN_PASSWORD },

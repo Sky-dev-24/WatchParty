@@ -514,6 +514,8 @@ export default function AdminPage() {
             return (
               <div
                 key={stream.id}
+                data-testid="stream-row"
+                data-stream-slug={stream.slug}
                 className="bg-gray-900 rounded-lg p-6 flex flex-col md:flex-row md:items-center gap-4"
               >
                 <div className="flex-1">
@@ -575,18 +577,21 @@ export default function AdminPage() {
                   <a
                     href={`/watch/${stream.slug}`}
                     target="_blank"
+                    data-testid="preview-stream"
                     className="bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded text-sm"
                   >
                     Preview
                   </a>
                   <button
                     onClick={() => openEditModal(stream)}
+                    data-testid="edit-stream"
                     className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded text-sm"
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => setEmbedModal(stream)}
+                    data-testid="embed-stream"
                     className="bg-purple-600 hover:bg-purple-700 px-3 py-2 rounded text-sm"
                   >
                     Embed
@@ -594,6 +599,7 @@ export default function AdminPage() {
                   {isLive && !isStopped && (
                     <button
                       onClick={() => stopStream(stream)}
+                      data-testid="stop-stream"
                       className="bg-orange-600 hover:bg-orange-700 px-3 py-2 rounded text-sm"
                     >
                       Stop
@@ -602,6 +608,7 @@ export default function AdminPage() {
                   {isStopped && (
                     <button
                       onClick={() => resumeStream(stream)}
+                      data-testid="resume-stream"
                       className="bg-green-600 hover:bg-green-700 px-3 py-2 rounded text-sm"
                     >
                       Resume
@@ -609,6 +616,7 @@ export default function AdminPage() {
                   )}
                   <button
                     onClick={() => toggleActive(stream)}
+                    data-testid={stream.isActive ? "deactivate-stream" : "activate-stream"}
                     className={`px-3 py-2 rounded text-sm ${
                       stream.isActive
                         ? "bg-yellow-600 hover:bg-yellow-700"
@@ -619,6 +627,7 @@ export default function AdminPage() {
                   </button>
                   <button
                     onClick={() => handleDelete(stream)}
+                    data-testid="delete-stream"
                     className="bg-red-600 hover:bg-red-700 px-3 py-2 rounded text-sm"
                   >
                     Delete
@@ -633,7 +642,7 @@ export default function AdminPage() {
       {/* Embed Code Modal */}
       {embedModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 rounded-lg p-6 max-w-2xl w-full">
+          <div className="bg-gray-900 rounded-lg p-6 max-w-2xl w-full" data-testid="embed-modal">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold">Embed Code</h2>
               <button
@@ -650,6 +659,7 @@ export default function AdminPage() {
             <div className="flex gap-2 mb-4">
               <button
                 onClick={() => setEmbedMode("responsive")}
+                data-testid="responsive-toggle"
                 className={`px-3 py-1.5 rounded text-sm font-medium ${
                   embedMode === "responsive"
                     ? "bg-blue-600 text-white"
@@ -660,6 +670,7 @@ export default function AdminPage() {
               </button>
               <button
                 onClick={() => setEmbedMode("fixed")}
+                data-testid="fixed-size-toggle"
                 className={`px-3 py-1.5 rounded text-sm font-medium ${
                   embedMode === "fixed"
                     ? "bg-blue-600 text-white"
@@ -695,7 +706,7 @@ export default function AdminPage() {
                 The player will automatically fill its container while maintaining 16:9 aspect ratio.
               </p>
             )}
-            <div className="bg-gray-800 rounded p-4 font-mono text-sm overflow-x-auto">
+            <div className="bg-gray-800 rounded p-4 font-mono text-sm overflow-x-auto" data-testid="embed-code">
               <code className="text-green-400 whitespace-pre-wrap break-all">
                 {getEmbedCode(embedModal.slug)}
               </code>
@@ -706,6 +717,7 @@ export default function AdminPage() {
                   navigator.clipboard.writeText(getEmbedCode(embedModal.slug));
                   alert("Embed code copied to clipboard!");
                 }}
+                data-testid="copy-embed"
                 className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-medium"
               >
                 Copy to Clipboard

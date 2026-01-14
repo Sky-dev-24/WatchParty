@@ -36,6 +36,13 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      grepInvert: /@ratelimit/,
+    },
+    {
+      name: 'chromium-rate-limit',
+      use: { ...devices['Desktop Chrome'] },
+      grep: /@ratelimit/,
+      dependencies: ['chromium'],
     },
   ],
   timeout: 30000,

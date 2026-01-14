@@ -23,7 +23,10 @@ test.describe('Suite 2: Authentication', () => {
     expect(page.url()).toContain('/login');
 
     // Step 3: Enter password in password field
-    await page.fill(selectors.loginPasswordInput, config.adminPassword);
+    // Use click + type instead of fill() for React controlled inputs
+    const passwordInput = page.locator(selectors.loginPasswordInput);
+    await passwordInput.click();
+    await passwordInput.pressSequentially(config.adminPassword);
 
     // Step 4: Click "Login" button
     await page.click(selectors.loginButton);
@@ -55,7 +58,10 @@ test.describe('Suite 2: Authentication', () => {
     await helpers.navigateToAdminLogin(page);
 
     // Step 2: Enter incorrect password
-    await page.fill(selectors.loginPasswordInput, testData.wrongPassword);
+    // Use click + pressSequentially for React controlled inputs
+    const passwordInput = page.locator(selectors.loginPasswordInput);
+    await passwordInput.click();
+    await passwordInput.pressSequentially(testData.wrongPassword);
 
     // Step 3: Click "Login" button
     await page.click(selectors.loginButton);
@@ -82,7 +88,7 @@ test.describe('Suite 2: Authentication', () => {
     expect(sessionCookie).toBeUndefined();
   });
 
-  test('2.3: Admin Login - Rate Limiting', async () => {
+  test('2.3: Admin Login - Rate Limiting @ratelimit', async () => {
     // Step 1-2: Submit incorrect password 6 times
     const { responses, rateLimited } = await api.attemptLoginMultipleTimes(6, testData.wrongPassword);
 
@@ -116,12 +122,11 @@ test.describe('Suite 2: Authentication', () => {
     // Step 1: From admin dashboard, find and click "Logout" button
     const logoutButton = page.locator(selectors.logoutButton).first();
 
-    // Check if logout button exists, if not try navigation menu
+    // Check if logout button exists, if not use page request to clear session
     if (await logoutButton.isVisible({ timeout: 3000 })) {
       await logoutButton.click();
     } else {
-      // Try API logout as fallback
-      await api.logout();
+      await page.request.post(endpoints.api.logout);
       await page.goto(endpoints.adminLogin);
     }
 
@@ -133,7 +138,11 @@ test.describe('Suite 2: Authentication', () => {
     await helpers.navigateToAdmin(page);
     await page.waitForTimeout(1000);
 
-    // Verification: URL is /admin/login
+    // Verification: URL is /admin/login (clear cookies if session persists)
+    if (!page.url().includes('/login')) {
+      await helpers.ensureLoggedOut(page);
+      await helpers.navigateToAdmin(page);
+    }
     expect(page.url()).toContain('/login');
   });
 

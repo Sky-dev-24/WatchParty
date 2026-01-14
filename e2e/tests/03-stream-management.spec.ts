@@ -386,38 +386,33 @@ test.describe('Suite 3: Stream Management', () => {
     await helpers.ensureLoggedIn(page);
 
     // Step 1-2: Find stream and click Embed button
-    const clicked = await helpers.clickStreamAction(page, testData.validStream.title, 'embed');
+    const clicked = await helpers.clickStreamAction(page, createdStreamSlug, 'embed');
 
     if (!clicked) {
       // Try looking for embed link/button another way
       const embedLink = page.locator(`a[href*="embed/${createdStreamSlug}"], button:has-text("Embed")`).first();
-      if (await embedLink.isVisible()) {
-        await embedLink.click();
-      } else {
-        test.skip(true, 'Could not find embed button in UI');
-        return;
-      }
+      await expect(embedLink, 'Embed action not found in UI').toBeVisible();
+      await embedLink.click();
     }
-
-    await page.waitForTimeout(500);
 
     // Step 3-5: Verify embed modal appears
+    // Wait for modal to appear after click
+    await page.waitForTimeout(500);
+
     const embedModal = page.locator(selectors.embedModal);
     const embedCode = page.locator(selectors.embedCode);
+    const copyButton = page.locator(selectors.copyButton);
 
-    // Check if modal or code is visible
-    const hasEmbedUI = (await embedModal.isVisible()) || (await embedCode.isVisible());
+    await expect(embedModal).toBeVisible({ timeout: 10000 });
+    await expect(embedCode).toBeVisible();
+    await expect(copyButton).toBeVisible();
 
-    if (hasEmbedUI) {
-      // Verification: Code contains correct stream slug
-      const codeText = await embedCode.textContent();
-      expect(codeText).toContain(createdStreamSlug);
+    // Verification: Code contains correct stream slug
+    const codeText = (await embedCode.textContent()) || '';
+    expect(codeText).toContain(createdStreamSlug);
 
-      // Check for iframe or embed-related content
-      expect(codeText?.toLowerCase()).toContain('iframe');
-    } else {
-      console.log('Embed UI not found - may need UI-specific selectors');
-    }
+    // Check for iframe or embed-related content
+    expect(codeText.toLowerCase()).toContain('iframe');
   });
 
   test('3.12: Preview Stream Link', async ({ page }) => {

@@ -40,6 +40,10 @@ export async function checkHealth(): Promise<HealthCheckResponse> {
 
 // Authentication
 export async function login(password: string = config.adminPassword): Promise<LoginResponse & { cookie?: string }> {
+  if (!password) {
+    throw new Error('ADMIN_PASSWORD is not set');
+  }
+  sessionCookie = null;
   const api = await getApiContext();
   const response = await api.post(endpoints.api.login, {
     data: { password },
@@ -47,11 +51,23 @@ export async function login(password: string = config.adminPassword): Promise<Lo
   });
 
   const setCookie = response.headers()['set-cookie'];
+
+  let result: LoginResponse;
+  try {
+    result = await response.json();
+  } catch (error) {
+    result = { success: false, error: 'Invalid login response' };
+  }
+
+  if (response.status() >= 400 || !result.success) {
+    const message = result.error || `Login failed with status ${response.status()}`;
+    throw new Error(message);
+  }
+
   if (setCookie) {
     sessionCookie = setCookie;
   }
 
-  const result = await response.json();
   return { ...result, cookie: setCookie };
 }
 
@@ -71,11 +87,23 @@ export function setSessionCookie(cookie: string): void {
   sessionCookie = cookie;
 }
 
+function normalizeStream(stream: Stream | null): Stream | null {
+  if (!stream) return stream;
+  if (!stream.playlistItems && stream.items) {
+    return { ...stream, playlistItems: stream.items };
+  }
+  return stream;
+}
+
+function normalizeStreams(streams: Stream[]): Stream[] {
+  return streams.map((stream) => normalizeStream(stream) as Stream);
+}
+
 // Streams
 export async function getStreams(): Promise<{ streams: Stream[]; cached: boolean }> {
   const api = await getApiContext();
   const response = await api.get(endpoints.api.streams);
-  const streams = await response.json();
+  const streams = normalizeStreams(await response.json());
   const cached = response.headers()['x-cache'] === 'HIT';
   return { streams, cached };
 }
@@ -84,7 +112,7 @@ export async function getStream(idOrSlug: string): Promise<Stream | null> {
   const api = await getApiContext();
   const response = await api.get(endpoints.api.stream(idOrSlug));
   if (response.status() === 404) return null;
-  return response.json();
+  return normalizeStream(await response.json());
 }
 
 export async function createStream(data: {
@@ -111,7 +139,7 @@ export async function createStream(data: {
     return { error: error.error || error.message, status };
   }
 
-  return { stream: await response.json(), status };
+  return { stream: normalizeStream(await response.json()) || undefined, status };
 }
 
 export async function updateStream(
@@ -141,7 +169,7 @@ export async function updateStream(
     return { error: error.error || error.message, status };
   }
 
-  return { stream: await response.json(), status };
+  return { stream: normalizeStream(await response.json()) || undefined, status };
 }
 
 export async function deleteStream(id: string): Promise<{ success: boolean; status: number }> {
@@ -197,7 +225,43 @@ export async function getMuxAssets(params?: {
     headers: sessionCookie ? { Cookie: sessionCookie } : {},
   });
 
-  return response.json();
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    payload = null;
+  }
+
+  if (response.status() >= 400) {
+    const message =
+      (payload as { error?: string } | null)?.error ||
+      `Failed to fetch Mux assets (status ${response.status()})`;
+    throw new Error(message);
+  }
+
+  let assets: MuxAsset[] = [];
+  if (Array.isArray(payload)) {
+    assets = payload as MuxAsset[];
+  } else if (payload && Array.isArray((payload as { assets?: MuxAsset[] }).assets)) {
+    assets = (payload as { assets: MuxAsset[] }).assets;
+  } else if (payload && Array.isArray((payload as { data?: MuxAsset[] }).data)) {
+    assets = (payload as { data: MuxAsset[] }).data;
+  }
+
+  return assets.map((asset) => {
+    if (!asset.playback_ids && asset.playbackId) {
+      return {
+        ...asset,
+        playback_ids: [
+          {
+            id: asset.playbackId,
+            policy: asset.playbackPolicy || 'public',
+          },
+        ],
+      };
+    }
+    return asset;
+  });
 }
 
 // Rate limit testing helper

@@ -4,7 +4,7 @@ import type { TestConfig } from './types';
 
 export const config: TestConfig = {
   baseUrl: process.env.BASE_URL || 'https://simulive.cloudysky.xyz',
-  adminPassword: process.env.ADMIN_PASSWORD || 'test-password',
+  adminPassword: process.env.ADMIN_PASSWORD || '',
   timeout: 30000,
   retries: 2,
 };
@@ -97,12 +97,12 @@ export const selectors = {
   nextPage: 'button:has-text("Next"), [data-testid="next-page"]',
   prevPage: 'button:has-text("Previous"), button:has-text("Prev"), [data-testid="prev-page"]',
 
-  // Embed modal
-  embedModal: '[data-testid="embed-modal"], .embed-modal, [role="dialog"]',
-  embedCode: '[data-testid="embed-code"], .embed-code, textarea, pre',
-  responsiveToggle: '[data-testid="responsive-toggle"], button:has-text("Responsive")',
-  fixedSizeToggle: '[data-testid="fixed-size-toggle"], button:has-text("Fixed")',
-  copyButton: 'button:has-text("Copy"), [data-testid="copy-embed"]',
+  // Embed modal - use content-based selectors since data-testid may not be in production
+  embedModal: 'div.fixed:has(h2:has-text("Embed Code"))',
+  embedCode: 'code:has-text("iframe")',
+  responsiveToggle: 'button:has-text("Responsive")',
+  fixedSizeToggle: 'button:has-text("Fixed")',
+  copyButton: 'button:has-text("Copy")',
 
   // Confirmation dialog
   confirmDialog: '[data-testid="confirm-dialog"], [role="alertdialog"], .confirm-dialog',

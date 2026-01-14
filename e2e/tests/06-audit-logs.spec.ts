@@ -41,8 +41,9 @@ test.describe('Suite 6: Audit Logs', () => {
 
     if (loginEvents.length > 0) {
       const recentLogin = loginEvents[0];
+      const timestamp = recentLogin.timestamp || recentLogin.createdAt;
       // Verification: Includes IP address and timestamp
-      expect(recentLogin.createdAt).toBeDefined();
+      expect(timestamp).toBeDefined();
       expect(recentLogin.ipAddress).toBeDefined();
     }
   });

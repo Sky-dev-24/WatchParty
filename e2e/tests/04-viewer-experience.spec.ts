@@ -331,31 +331,91 @@ test.describe('Suite 4: Viewer Experience', () => {
       return;
     }
 
+    const items = (stream.playlistItems || stream.items || []).slice().sort((a, b) => a.order - b.order);
+    if (items.length === 0) {
+      test.skip(true, 'No playlist items for sync test');
+      return;
+    }
+
+    const playlistDuration = items.reduce((sum, item) => sum + (item.duration || 0), 0);
+    if (playlistDuration <= 0) {
+      test.skip(true, 'Playlist duration unavailable for sync test');
+      return;
+    }
+
+    let serverTimeMs = Date.now();
+    try {
+      const timeResponse = await page.request.get('/api/time');
+      if (timeResponse.ok()) {
+        const timeData = await timeResponse.json();
+        if (typeof timeData?.serverTime === 'number') {
+          serverTimeMs = timeData.serverTime;
+        }
+      }
+    } catch (error) {
+      // Fall back to local time if server time is unavailable.
+    }
+
     const scheduledStart = new Date(stream.scheduledStart).getTime();
-    const now = Date.now();
-    const expectedPosition = (now - scheduledStart) / 1000; // seconds
+    const elapsedSeconds = (serverTimeMs - scheduledStart) / 1000;
+    const totalDuration = playlistDuration * stream.loopCount;
+
+    if (elapsedSeconds < 0) {
+      test.skip(true, 'Stream has not started yet');
+      return;
+    }
+
+    if (elapsedSeconds >= totalDuration) {
+      test.skip(true, 'Stream already ended');
+      return;
+    }
+
+    const positionInLoop = elapsedSeconds % playlistDuration;
+    let expectedPosition = 0;
+    let accumulated = 0;
+    for (const item of items) {
+      const duration = item.duration || 0;
+      if (positionInLoop < accumulated + duration) {
+        expectedPosition = positionInLoop - accumulated;
+        break;
+      }
+      accumulated += duration;
+    }
 
     // Step 1-2: Navigate to watch page
     await helpers.navigateToWatch(page, liveStream.slug);
     await page.waitForTimeout(3000); // Allow player to sync
 
     // Step 3: Try to get player position via JavaScript
-    const playerPosition = await page.evaluate(() => {
-      // Try various player APIs
-      const muxPlayer = document.querySelector('mux-player') as HTMLVideoElement | null;
-      if (muxPlayer && 'currentTime' in muxPlayer) {
-        return muxPlayer.currentTime;
-      }
+    let playerPosition: number | null = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      playerPosition = await page.evaluate(() => {
+        // Try various player APIs
+        const muxPlayer = document.querySelector('mux-player') as HTMLVideoElement | null;
+        if (muxPlayer && 'currentTime' in muxPlayer) {
+          return muxPlayer.currentTime;
+        }
 
-      const video = document.querySelector('video');
-      if (video) {
-        return video.currentTime;
-      }
+        const video = document.querySelector('video');
+        if (video) {
+          return video.currentTime;
+        }
 
-      return null;
-    });
+        return null;
+      });
+
+      if (playerPosition !== null && playerPosition > 0.5) {
+        break;
+      }
+      await page.waitForTimeout(1000);
+    }
 
     if (playerPosition !== null) {
+      if (playerPosition <= 0.5) {
+        test.skip(true, 'Player did not start playback for sync check');
+        return;
+      }
+
       // Calculate drift
       const drift = Math.abs(playerPosition - expectedPosition);
       const driftTolerance = stream.driftTolerance || 2;

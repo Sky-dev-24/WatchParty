@@ -108,11 +108,52 @@ export async function getStreams(): Promise<{ streams: Stream[]; cached: boolean
   return { streams, cached };
 }
 
-export async function getStream(idOrSlug: string): Promise<Stream | null> {
+export async function getStream(idOrSlug: string): Promise<Stream | null> {     
   const api = await getApiContext();
   const response = await api.get(endpoints.api.stream(idOrSlug));
   if (response.status() === 404) return null;
-  return normalizeStream(await response.json());
+  if (response.status() >= 400) return null;
+
+  // Handle non-JSON responses (e.g., HTML error pages)
+  const contentType = response.headers()['content-type'] || '';
+  if (!contentType.includes('application/json')) {
+    return null;
+  }
+
+  try {
+    return normalizeStream(await response.json());
+  } catch {
+    return null;
+  }
+}
+
+export async function getStreamResponse(
+  idOrSlug: string
+): Promise<{
+  status: number;
+  ok: boolean;
+  contentType: string;
+  body: unknown | null;
+}> {
+  const api = await getApiContext();
+  const response = await api.get(endpoints.api.stream(idOrSlug));
+  const contentType = response.headers()['content-type'] || '';
+  let body: unknown | null = null;
+
+  if (contentType.includes('application/json')) {
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+  }
+
+  return {
+    status: response.status(),
+    ok: response.ok(),
+    contentType,
+    body,
+  };
 }
 
 export async function createStream(data: {
@@ -179,6 +220,40 @@ export async function deleteStream(id: string): Promise<{ success: boolean; stat
   });
 
   return { success: response.status() < 400, status: response.status() };
+}
+
+export async function stopStream(id: string): Promise<{ success: boolean; error?: string }> {
+  const api = await getApiContext();
+  const response = await api.patch(endpoints.api.stream(id), {
+    data: { endedAt: new Date().toISOString() },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(sessionCookie ? { Cookie: sessionCookie } : {}),
+    },
+  });
+
+  if (!response.ok()) {
+    const body = await response.json().catch(() => ({}));
+    return { success: false, error: body.error || `Status ${response.status()}` };
+  }
+  return { success: true };
+}
+
+export async function resumeStream(id: string): Promise<{ success: boolean; error?: string }> {
+  const api = await getApiContext();
+  const response = await api.patch(endpoints.api.stream(id), {
+    data: { endedAt: null },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(sessionCookie ? { Cookie: sessionCookie } : {}),
+    },
+  });
+
+  if (!response.ok()) {
+    const body = await response.json().catch(() => ({}));
+    return { success: false, error: body.error || `Status ${response.status()}` };
+  }
+  return { success: true };
 }
 
 export async function getStreamStatus(idOrSlug: string): Promise<StreamStatusResponse | null> {

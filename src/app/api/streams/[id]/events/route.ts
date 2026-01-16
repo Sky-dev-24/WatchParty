@@ -1,10 +1,7 @@
 import { NextRequest } from "next/server";
 import prisma from "@/lib/db";
-import {
-  createSubscriberClient,
-  STREAM_EVENTS_CHANNEL,
-  isRedisConfigured,
-} from "@/lib/redis";
+import { isRedisConfigured } from "@/lib/redis";
+import { registerStreamEventClient } from "@/lib/sse-hub";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -47,9 +44,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return new Response("Redis is required", { status: 503 });
   }
 
-  const subscriber = createSubscriberClient();
-
-  const channel = `${STREAM_EVENTS_CHANNEL}${stream.slug}`;
   const encoder = new TextEncoder();
 
   const sseStream = new ReadableStream({
@@ -61,63 +55,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         )
       );
 
-      // Heartbeat every 30s to keep connection alive through proxies/load balancers
-      const heartbeat = setInterval(() => {
-        try {
-          controller.enqueue(encoder.encode(`: heartbeat ${Date.now()}\n\n`));
-        } catch {
-          clearInterval(heartbeat);
-        }
-      }, 30000);
-
-      // Subscribe to stream events
       try {
-        await subscriber.subscribe(channel);
+        await registerStreamEventClient(stream.slug, controller, request.signal);
       } catch (error) {
-        console.error("[SSE] Failed to subscribe:", error);
-        clearInterval(heartbeat);
-        controller.close();
-        return;
-      }
-
-      subscriber.on("message", (ch, message) => {
-        if (ch !== channel) return;
-
-        try {
-          const event = JSON.parse(message);
-          controller.enqueue(
-            encoder.encode(`event: ${event.type}\ndata: ${message}\n\n`)
-          );
-
-          // If stream stopped, close the connection after sending the event
-          if (event.type === "stopped") {
-            setTimeout(() => {
-              clearInterval(heartbeat);
-              subscriber.unsubscribe(channel).catch(() => {});
-              subscriber.quit().catch(() => {});
-              try {
-                controller.close();
-              } catch {
-                // Already closed
-              }
-            }, 100);
-          }
-        } catch (error) {
-          console.error("[SSE] Error processing message:", error);
-        }
-      });
-
-      // Clean up on client disconnect
-      request.signal.addEventListener("abort", () => {
-        clearInterval(heartbeat);
-        subscriber.unsubscribe(channel).catch(() => {});
-        subscriber.quit().catch(() => {});
+        console.error("[SSE] Failed to register client:", error);
         try {
           controller.close();
         } catch {
           // Already closed
         }
-      });
+      }
     },
   });
 

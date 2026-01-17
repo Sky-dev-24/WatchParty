@@ -1,8 +1,12 @@
 const cluster = require("cluster");
+const os = require("os");
 const path = require("path");
 
-// Fixed at 4 workers for predictable resource usage
-const NUM_WORKERS = 4;
+// Default to CPU core count; allow override via CLUSTER_WORKERS.
+const envWorkers = Number.parseInt(process.env.CLUSTER_WORKERS || "", 10);
+const NUM_WORKERS = Number.isFinite(envWorkers) && envWorkers > 0
+  ? envWorkers
+  : os.cpus().length;
 
 if (cluster.isPrimary) {
   console.log(`Primary process ${process.pid} starting`);

@@ -12,7 +12,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 16G
         reservations:
           memory: 512M
     # Increase file descriptor limits for high connection counts

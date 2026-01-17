@@ -1,5 +1,6 @@
 import http from "k6/http";
 import { check, sleep } from "k6";
+import { Counter, Rate } from "k6/metrics";
 
 const BASE_URL = __ENV.BASE_URL || "https://simulive.cloudysky.xyz";
 const TARGET_VUS = Number(__ENV.TARGET_VUS || 2000);
@@ -11,6 +12,13 @@ const STATUS_INTERVAL = Number(__ENV.STATUS_INTERVAL || 30);
 const TIME_INTERVAL = Number(__ENV.TIME_INTERVAL || 180);
 const WATCH_SHARE = Number(__ENV.WATCH_SHARE || 0.4);
 const STREAM_SLUG = __ENV.STREAM_SLUG || "";
+
+const pageErrors = new Counter("page_errors");
+const pageOkRate = new Rate("page_ok_rate");
+const timeErrors = new Counter("time_errors");
+const timeOkRate = new Rate("time_ok_rate");
+const statusErrors = new Counter("status_errors");
+const statusOkRate = new Rate("status_ok_rate");
 
 export const options = {
   scenarios: {
@@ -52,19 +60,31 @@ export function setup() {
   return { slug };
 }
 
+function recordResult(res, okRate, errorCounter) {
+  const ok = res && res.status === 200;
+  okRate.add(ok);
+  if (!ok) {
+    errorCounter.add(1);
+  }
+  return ok;
+}
+
 function initViewer(slug) {
   viewerSlug = slug;
   viewerMode = Math.random() < WATCH_SHARE ? "watch" : "embed";
 
   const pagePath = viewerMode === "watch" ? "watch" : "embed";
   const pageRes = http.get(`${BASE_URL}/${pagePath}/${viewerSlug}`);
-  check(pageRes, { "page ok": (res) => res.status === 200 });
+  const pageOk = recordResult(pageRes, pageOkRate, pageErrors);
+  check(pageRes, { "page ok": () => pageOk });
 
   const timeRes = http.get(`${BASE_URL}/api/time`);
-  check(timeRes, { "time ok": (res) => res.status === 200 });
+  const timeOk = recordResult(timeRes, timeOkRate, timeErrors);
+  check(timeRes, { "time ok": () => timeOk });
 
   const statusRes = http.get(`${BASE_URL}/api/streams/${viewerSlug}/status`);
-  check(statusRes, { "status ok": (res) => res.status === 200 });
+  const statusOk = recordResult(statusRes, statusOkRate, statusErrors);
+  check(statusRes, { "status ok": () => statusOk });
 
   const now = Date.now();
   lastStatusCheck = now;
@@ -87,13 +107,15 @@ export default function (data) {
   const now = Date.now();
   if (now - lastStatusCheck >= STATUS_INTERVAL * 1000) {
     const statusRes = http.get(`${BASE_URL}/api/streams/${viewerSlug}/status`);
-    check(statusRes, { "status ok": (res) => res.status === 200 });
+    const statusOk = recordResult(statusRes, statusOkRate, statusErrors);
+    check(statusRes, { "status ok": () => statusOk });
     lastStatusCheck = now;
   }
 
   if (now - lastTimeCheck >= TIME_INTERVAL * 1000) {
     const timeRes = http.get(`${BASE_URL}/api/time`);
-    check(timeRes, { "time ok": (res) => res.status === 200 });
+    const timeOk = recordResult(timeRes, timeOkRate, timeErrors);
+    check(timeRes, { "time ok": () => timeOk });
     lastTimeCheck = now;
   }
 

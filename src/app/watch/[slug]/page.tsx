@@ -13,7 +13,7 @@ import WatchPartyRoom from "@/components/WatchPartyRoom";
 
 export default function WatchPage() {
   const params = useParams();
-  const roomSlug = params.slug as string;
+  const roomSlug = typeof params?.slug === "string" ? params.slug : "";
 
   const [displayName, setDisplayName] = useState("");
   const [hasJoined, setHasJoined] = useState(false);
@@ -37,6 +37,10 @@ export default function WatchPage() {
       setHasJoined(true);
     }
   };
+
+  if (!roomSlug) {
+    return null;
+  }
 
   if (!hasJoined) {
     return (

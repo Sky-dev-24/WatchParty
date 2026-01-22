@@ -29,6 +29,7 @@ export interface UseSocketOptions {
   onYouAreHost?: () => void;
   onControlGranted?: () => void;
   onControlRevoked?: () => void;
+  onRoomInfo?: (room: JoinResult["room"]) => void;
   onError?: (message: string) => void;
 }
 
@@ -66,6 +67,7 @@ export function useSocket(options: UseSocketOptions): UseSocketReturn {
     onYouAreHost,
     onControlGranted,
     onControlRevoked,
+    onRoomInfo,
     onError,
   } = options;
 
@@ -79,131 +81,155 @@ export function useSocket(options: UseSocketOptions): UseSocketReturn {
 
   // Initialize socket connection
   useEffect(() => {
-    const newSocket = io({
-      transports: ["websocket", "polling"],
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-    }) as TypedSocket;
+    let isActive = true;
+    let newSocket: TypedSocket | null = null;
 
-    setSocket(newSocket);
+    const setupSocket = async () => {
+      try {
+        await fetch("/api/socket");
+      } catch (error) {
+        console.error("[Socket] Failed to initialize server:", error);
+      }
 
-    // Connection events
-    newSocket.on("connect", () => {
-      console.log("[Socket] Connected");
-      setConnected(true);
+      if (!isActive) return;
 
-      // Join room on connect
-      newSocket.emit("room:join", roomSlug, displayName, (result: JoinResult) => {
-        if (result.success) {
-          console.log("[Socket] Joined room successfully");
-          setSessionId(result.sessionId || null);
+      const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || undefined;
+      const socketInstance = io(socketUrl, {
+        transports: ["websocket", "polling"],
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+      }) as TypedSocket;
 
-          // Check initial host/control status
-          const self = result.participants?.find(
-            (p) => p.sessionId === result.sessionId
-          );
-          if (self) {
-            setIsHost(self.isHost);
-            setCanControl(self.canControl || self.isHost);
+      newSocket = socketInstance;
+      setSocket(socketInstance);
+
+      // Connection events
+      socketInstance.on("connect", () => {
+        console.log("[Socket] Connected");
+        setConnected(true);
+
+        // Join room on connect
+        socketInstance.emit("room:join", roomSlug, displayName, (result: JoinResult) => {
+          if (result.success) {
+            console.log("[Socket] Joined room successfully");
+            setSessionId(result.sessionId || null);
+
+            if (result.room && onRoomInfo) {
+              onRoomInfo(result.room);
+            }
+
+            // Check initial host/control status
+            const self = result.participants?.find(
+              (p) => p.sessionId === result.sessionId
+            );
+            if (self) {
+              setIsHost(self.isHost);
+              setCanControl(self.canControl || self.isHost);
+            }
+
+            // Send initial playback state
+            if (result.playbackState && onPlaybackState) {
+              onPlaybackState(result.playbackState);
+            }
+
+            // Start heartbeat
+            heartbeatIntervalRef.current = setInterval(() => {
+              socketInstance.emit("heartbeat");
+            }, 30000); // Every 30 seconds
+          } else {
+            console.error("[Socket] Failed to join room:", result.error);
+            if (onError) onError(result.error || "Failed to join room");
           }
+        });
+      });
 
-          // Send initial playback state
-          if (result.playbackState && onPlaybackState) {
-            onPlaybackState(result.playbackState);
-          }
+      socketInstance.on("disconnect", (reason) => {
+        console.log("[Socket] Disconnected:", reason);
+        setConnected(false);
 
-          // Start heartbeat
-          heartbeatIntervalRef.current = setInterval(() => {
-            newSocket.emit("heartbeat");
-          }, 30000); // Every 30 seconds
-        } else {
-          console.error("[Socket] Failed to join room:", result.error);
-          if (onError) onError(result.error || "Failed to join room");
+        // Clear heartbeat
+        if (heartbeatIntervalRef.current) {
+          clearInterval(heartbeatIntervalRef.current);
+          heartbeatIntervalRef.current = null;
         }
       });
-    });
 
-    newSocket.on("disconnect", (reason) => {
-      console.log("[Socket] Disconnected:", reason);
-      setConnected(false);
+      socketInstance.on("connect_error", (error) => {
+        console.error("[Socket] Connection error:", error);
+        if (onError) onError("Connection error");
+      });
 
-      // Clear heartbeat
-      if (heartbeatIntervalRef.current) {
-        clearInterval(heartbeatIntervalRef.current);
-        heartbeatIntervalRef.current = null;
-      }
-    });
+      // Server events
+      socketInstance.on("playback:state", (state) => {
+        if (onPlaybackState) onPlaybackState(state);
+      });
 
-    newSocket.on("connect_error", (error) => {
-      console.error("[Socket] Connection error:", error);
-      if (onError) onError("Connection error");
-    });
+      socketInstance.on("chat:new", (message) => {
+        if (onChatMessage) onChatMessage(message);
+      });
 
-    // Server events
-    newSocket.on("playback:state", (state) => {
-      if (onPlaybackState) onPlaybackState(state);
-    });
+      socketInstance.on("chat:history", (messages) => {
+        if (onChatHistory) onChatHistory(messages);
+      });
 
-    newSocket.on("chat:new", (message) => {
-      if (onChatMessage) onChatMessage(message);
-    });
+      socketInstance.on("participant:list", (participants) => {
+        // Update own status
+        const self = participants.find((p) => p.sessionId === sessionId);
+        if (self) {
+          setIsHost(self.isHost);
+          setCanControl(self.canControl || self.isHost);
+        }
 
-    newSocket.on("chat:history", (messages) => {
-      if (onChatHistory) onChatHistory(messages);
-    });
+        if (onParticipantList) onParticipantList(participants);
+      });
 
-    newSocket.on("participant:list", (participants) => {
-      // Update own status
-      const self = participants.find((p) => p.sessionId === sessionId);
-      if (self) {
-        setIsHost(self.isHost);
-        setCanControl(self.canControl || self.isHost);
-      }
+      socketInstance.on("host:changed", (newHostSessionId) => {
+        // Update own host status
+        if (sessionId === newHostSessionId) {
+          setIsHost(true);
+          setCanControl(true);
+        } else {
+          setIsHost(false);
+        }
 
-      if (onParticipantList) onParticipantList(participants);
-    });
+        if (onHostChanged) onHostChanged(newHostSessionId);
+      });
 
-    newSocket.on("host:changed", (newHostSessionId) => {
-      // Update own host status
-      if (sessionId === newHostSessionId) {
+      socketInstance.on("you_are_host", () => {
         setIsHost(true);
         setCanControl(true);
-      } else {
-        setIsHost(false);
-      }
+        if (onYouAreHost) onYouAreHost();
+      });
 
-      if (onHostChanged) onHostChanged(newHostSessionId);
-    });
+      socketInstance.on("control:granted", () => {
+        setCanControl(true);
+        if (onControlGranted) onControlGranted();
+      });
 
-    newSocket.on("you_are_host", () => {
-      setIsHost(true);
-      setCanControl(true);
-      if (onYouAreHost) onYouAreHost();
-    });
+      socketInstance.on("control:revoked", () => {
+        setCanControl(false);
+        if (onControlRevoked) onControlRevoked();
+      });
 
-    newSocket.on("control:granted", () => {
-      setCanControl(true);
-      if (onControlGranted) onControlGranted();
-    });
+      socketInstance.on("error", (message) => {
+        console.error("[Socket] Server error:", message);
+        if (onError) onError(message);
+      });
+    };
 
-    newSocket.on("control:revoked", () => {
-      setCanControl(false);
-      if (onControlRevoked) onControlRevoked();
-    });
-
-    newSocket.on("error", (message) => {
-      console.error("[Socket] Server error:", message);
-      if (onError) onError(message);
-    });
+    setupSocket();
 
     // Cleanup
     return () => {
+      isActive = false;
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
       }
-      newSocket.emit("room:leave");
-      newSocket.close();
+      if (newSocket) {
+        newSocket.emit("room:leave");
+        newSocket.close();
+      }
     };
   }, [roomSlug, displayName]); // Only reconnect if room/name changes
 

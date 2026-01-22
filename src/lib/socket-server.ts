@@ -90,6 +90,7 @@ export interface JoinResult {
     videoUrl?: string;
     videoDuration?: number;
     plexServerUrl?: string;
+    plexToken?: string;
   };
   playbackState?: PlaybackState;
   participants?: ParticipantInfo[];

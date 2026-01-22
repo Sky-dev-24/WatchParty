@@ -175,6 +175,7 @@ async function handleRoomJoin(
         videoUrl: room.videoUrl || undefined,
         videoDuration: room.videoDuration || undefined,
         plexServerUrl: room.plexServerUrl || undefined,
+        plexToken: room.plexToken || undefined,
       },
       playbackState,
       participants: participantInfos,

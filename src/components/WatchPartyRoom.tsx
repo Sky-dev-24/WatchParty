@@ -38,6 +38,7 @@ export default function WatchPartyRoom({
     videoUrl?: string;
     videoDuration?: number;
     plexServerUrl?: string;
+    plexToken?: string;
   } | null>(null);
 
   const [playbackState, setPlaybackState] = useState<PlaybackState>({
@@ -76,6 +77,19 @@ export default function WatchPartyRoom({
     },
     onControlRevoked: () => {
       console.log("Your co-host permissions have been revoked");
+    },
+    onRoomInfo: (room) => {
+      if (room) {
+        setRoomInfo({
+          name: room.name,
+          videoType: room.videoType as "youtube" | "plex",
+          videoId: room.videoId,
+          videoUrl: room.videoUrl,
+          videoDuration: room.videoDuration,
+          plexServerUrl: room.plexServerUrl,
+          plexToken: room.plexToken,
+        });
+      }
     },
     onError: (error) => {
       console.error("Socket error:", error);
@@ -188,6 +202,7 @@ export default function WatchPartyRoom({
                 videoId={roomInfo.videoId}
                 videoUrl={roomInfo.videoUrl}
                 plexServerUrl={roomInfo.plexServerUrl}
+                plexToken={roomInfo.plexToken}
                 onReady={handlePlayerReady}
                 onPlay={handlePlayerPlay}
                 onPause={handlePlayerPause}

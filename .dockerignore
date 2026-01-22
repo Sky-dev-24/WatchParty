@@ -12,6 +12,9 @@ dist
 .env
 .env.local
 .env.*.local
+.env.production
+.env.development
+.env.test
 
 # IDE and editor files
 .idea
@@ -39,3 +42,10 @@ LICENSE
 # Testing
 coverage
 .nyc_output
+e2e
+perf
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__

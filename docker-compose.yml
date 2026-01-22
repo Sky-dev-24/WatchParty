@@ -1,15 +1,15 @@
 services:
-  # Nginx reverse proxy - point your Cloudflare tunnel here (port 80)
+  # Nginx reverse proxy - point your reverse proxy/tunnel here
   nginx:
     image: nginx:alpine
-    container_name: simulive-nginx
+    container_name: watchparty-nginx
     restart: unless-stopped
     ports:
       - "${PORT:-3080}:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - simulive
+      - watchparty
     ulimits:
       nofile:
         soft: 65535
@@ -26,46 +26,49 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    networks:
+      - watchparty-network
 
-  # Main application (clustered workers) - internal only, accessed via nginx
-  simulive:
+  # Main WatchParty application (clustered workers)
+  watchparty:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: simulive-stream
+    container_name: watchparty-app
     restart: unless-stopped
     # No external ports - nginx handles external traffic
     expose:
       - "3000"
-    # Resource limits for 4 workers
+    # Resource limits for 4 workers + Socket.io
     deploy:
       resources:
         limits:
-          memory: 16G
+          memory: 4G
         reservations:
           memory: 512M
-    # Increase file descriptor limits for high connection counts
+    # Increase file descriptor limits for WebSocket connections
     ulimits:
       nofile:
         soft: 65535
         hard: 65535
     environment:
-      # Mux API Credentials (required)
-      - MUX_TOKEN_ID=${MUX_TOKEN_ID}
-      - MUX_TOKEN_SECRET=${MUX_TOKEN_SECRET}
-
-      # Mux Signing Keys (required for signed/private assets)
-      - MUX_SIGNING_KEY=${MUX_SIGNING_KEY:-}
-      - MUX_PRIVATE_KEY=${MUX_PRIVATE_KEY:-}
+      # Node environment
+      - NODE_ENV=production
 
       # PostgreSQL Database URL
-      - DATABASE_URL=postgresql://simulive:${POSTGRES_PASSWORD:-simulive}@postgres:5432/simulive
+      - DATABASE_URL=postgresql://watchparty:${POSTGRES_PASSWORD:-watchparty}@postgres:5432/watchparty
 
-      # Redis URL for caching
+      # Redis URL for Socket.io adapter and caching
       - REDIS_URL=redis://redis:6379
 
       # Optional: Admin password to protect /admin
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+
+      # Optional: Plex OAuth client ID (defaults to watchparty-app)
+      - NEXT_PUBLIC_PLEX_CLIENT_ID=${NEXT_PUBLIC_PLEX_CLIENT_ID:-watchparty-app}
+
+      # Optional: Enable secure cookies for HTTPS deployments
+      - SECURE_COOKIES=${SECURE_COOKIES:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,39 +80,52 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    networks:
+      - watchparty-network
 
   # PostgreSQL Database
   postgres:
     image: postgres:16-alpine
-    container_name: simulive-postgres
+    container_name: watchparty-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: simulive
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-simulive}
-      POSTGRES_DB: simulive
+      POSTGRES_USER: watchparty
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-watchparty}
+      POSTGRES_DB: watchparty
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - watchparty-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U simulive -d simulive"]
+      test: ["CMD-SHELL", "pg_isready -U watchparty -d watchparty"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
+    networks:
+      - watchparty-network
 
-  # Redis Cache
+  # Redis Cache & Socket.io Adapter
   redis:
     image: redis:7-alpine
-    container_name: simulive-redis
+    container_name: watchparty-redis
     restart: unless-stopped
-    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    # Increased memory for chat history and Socket.io pub/sub
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
-      - redis-data:/data
+      - watchparty-redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - watchparty-network
+
+networks:
+  watchparty-network:
+    driver: bridge
 
 volumes:
-  postgres-data:
-  redis-data:
+  watchparty-postgres-data:
+    driver: local
+  watchparty-redis-data:
+    driver: local

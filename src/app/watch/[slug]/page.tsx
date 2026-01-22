@@ -1,91 +1,79 @@
-import { cache } from "react";
-import { notFound } from "next/navigation";
-import prisma from "@/lib/db";
-import SimulatedLivePlayer from "@/components/SimulatedLivePlayer";
+/**
+ * Watch Party Page
+ *
+ * Main page for watching videos together in real-time.
+ * Handles room joining with display name prompt.
+ */
 
-// ISR: Regenerate every 60 seconds - stream data rarely changes
-// This reduces database queries by ~99% at scale
-export const revalidate = 60;
+"use client";
 
-// Cache the stream query to deduplicate between page and metadata
-const getStream = cache(async (slug: string) => {
-  try {
-    return await prisma.stream.findUnique({
-      where: { slug },
-      include: {
-        items: {
-          orderBy: { order: "asc" },
-        },
-      },
-    });
-  } catch (error) {
-    // During build time, database may not be available
-    console.error("Failed to fetch stream:", error);
-    return null;
-  }
-});
+import { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
+import WatchPartyRoom from "@/components/WatchPartyRoom";
 
-interface PageProps {
-  params: Promise<{ slug: string }>;
-}
+export default function WatchPage() {
+  const params = useParams();
+  const roomSlug = params.slug as string;
 
-export default async function WatchPage({ params }: PageProps) {
-  const { slug } = await params;
+  const [displayName, setDisplayName] = useState("");
+  const [hasJoined, setHasJoined] = useState(false);
+  const [inputName, setInputName] = useState("");
 
-  const stream = await getStream(slug);
+  // Check for saved display name in localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem("watchparty_displayname");
+    if (saved) {
+      setDisplayName(saved);
+      setHasJoined(true);
+    }
+  }, []);
 
-  if (!stream) {
-    notFound();
-  }
+  const handleJoin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (inputName.trim()) {
+      const name = inputName.trim();
+      setDisplayName(name);
+      localStorage.setItem("watchparty_displayname", name);
+      setHasJoined(true);
+    }
+  };
 
-  // Check if stream is active or has items
-  if (!stream.isActive || stream.items.length === 0) {
+  if (!hasJoined) {
     return (
-      <main className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="aspect-video bg-gray-900 rounded-lg flex items-center justify-center">
-            <div className="text-center">
-              <h1 className="text-2xl font-bold mb-2">Stream Unavailable</h1>
-              <p className="text-gray-400">
-                This stream is not currently active.
-              </p>
-            </div>
-          </div>
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+        <div className="bg-gray-900 rounded-lg p-8 max-w-md w-full border border-gray-700">
+          <h1 className="text-2xl font-bold text-white mb-2">Join Watch Party</h1>
+          <p className="text-gray-400 mb-6">
+            Enter your display name to join the watch party
+          </p>
+
+          <form onSubmit={handleJoin}>
+            <input
+              type="text"
+              value={inputName}
+              onChange={(e) => setInputName(e.target.value)}
+              placeholder="Your name"
+              className="w-full bg-gray-800 text-white rounded px-4 py-3 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              maxLength={30}
+              autoFocus
+              required
+            />
+
+            <button
+              type="submit"
+              className="w-full bg-blue-600 text-white rounded px-4 py-3 hover:bg-blue-700 transition-colors font-semibold"
+            >
+              Join Watch Party
+            </button>
+          </form>
+
+          <p className="text-xs text-gray-500 mt-4 text-center">
+            Your display name will be visible to other participants
+          </p>
         </div>
-      </main>
+      </div>
     );
   }
 
-  return (
-    <main className="container mx-auto px-4 py-8">
-      <div className="max-w-4xl mx-auto">
-        <SimulatedLivePlayer
-          items={stream.items}
-          loopCount={stream.loopCount}
-          scheduledStart={stream.scheduledStart.toISOString()}
-          title={stream.title}
-          syncInterval={stream.syncInterval}
-          driftTolerance={stream.driftTolerance}
-          streamSlug={stream.slug}
-          endedAt={stream.endedAt ? stream.endedAt.toISOString() : null}
-        />
-        <h1 className="text-2xl font-bold mt-6">{stream.title}</h1>
-      </div>
-    </main>
-  );
-}
-
-// Generate metadata (uses cached getStream - no duplicate DB query)
-export async function generateMetadata({ params }: PageProps) {
-  const { slug } = await params;
-  const stream = await getStream(slug);
-
-  if (!stream) {
-    return { title: "Stream Not Found" };
-  }
-
-  return {
-    title: stream.title,
-    description: `Watch ${stream.title} live`,
-  };
+  return <WatchPartyRoom roomSlug={roomSlug} initialDisplayName={displayName} />;
 }

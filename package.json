@@ -1,6 +1,6 @@
 {
-  "name": "simulive-test",
-  "version": "0.1.0",
+  "name": "watchparty",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -20,17 +20,18 @@
     "perf:sse": "node perf/sse-load.js"
   },
   "dependencies": {
-    "@mux/mux-node": "^9.0.1",
-    "@mux/mux-player-react": "^3.2.0",
     "@prisma/client": "^6.1.0",
+    "@socket.io/redis-adapter": "^8.3.0",
     "ioredis": "^5.8.2",
     "next": "^15.1.3",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "redis": "^4.7.1",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
-    "@types/ioredis": "^5.0.0",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",

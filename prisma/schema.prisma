@@ -7,55 +7,91 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Stream {
+model PlexConnection {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  // Admin/user identifier (session-based)
+  sessionId String @unique
+
+  // Plex auth tokens
+  plexToken    String
+  plexUsername String
+
+  // Selected server
+  selectedServerId  String?
+  selectedServerUrl String?
+
+  expiresAt DateTime?
+
+  @@index([sessionId])
+}
+
+model Room {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Stream identification
-  slug      String   @unique // URL-friendly identifier (e.g., "new-years-eve-2024")
-  title     String
+  // Room identity
+  slug     String  @unique
+  name     String
+  roomCode String? @unique // For private rooms
 
-  // Scheduling
-  scheduledStart DateTime // When the "broadcast" starts
+  // Room type
+  isPublic     Boolean @default(true)
+  isPersistent Boolean @default(false) // If false, delete when no participants
 
-  // Status
-  isActive   Boolean @default(false) // Whether this stream is currently active/visible
-  endedAt    DateTime? // If set, stream was force-stopped at this time
+  // Video source
+  videoType     String  // "youtube" | "plex"
+  videoId       String  // YouTube video ID or Plex ratingKey
+  videoUrl      String? // Full URL for reference
+  videoDuration Float?  // Duration in seconds
 
-  // Playlist & Looping
-  loopCount  Int @default(1) // How many times to play the playlist (1-10)
-  items      PlaylistItem[]
+  // Plex-specific fields
+  plexServerUrl String? // For Plex videos
+  plexToken     String? // Room creator's Plex token for playback
+  plexServerId  String? // Plex server machine identifier
 
-  // Optional settings
-  syncInterval    Int @default(5000)  // How often to sync (ms)
-  driftTolerance  Int @default(2)     // Max drift before resync (seconds)
+  // Current playback state (host-controlled)
+  isPlaying       Boolean  @default(false)
+  currentPosition Float    @default(0) // Seconds
+  lastUpdated     DateTime @default(now()) // When state last changed
 
-  // Indexes for query performance
-  @@index([isActive])
-  @@index([scheduledStart])
-  @@index([isActive, scheduledStart])
+  // Host
+  hostId String
+
+  // Relations
+  participants Participant[]
+
+  @@index([isPublic])
+  @@index([isPersistent])
+  @@index([slug])
+  @@index([roomCode])
 }
 
-model PlaylistItem {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
+model Participant {
+  id         String   @id @default(cuid())
+  joinedAt   DateTime @default(now())
+  lastSeenAt DateTime @default(now())
 
-  // Relation to stream
-  streamId  String
-  stream    Stream   @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  // Identity
+  displayName String
+  sessionId   String @unique // Browser session identifier
 
-  // Mux asset details
-  assetId        String  // Mux asset ID
-  playbackId     String  // Mux playback ID
-  playbackPolicy String  @default("public") // "public" or "signed"
-  duration       Float   // Video duration in seconds
+  // Permissions
+  isHost     Boolean @default(false)
+  canControl Boolean @default(false) // Co-host permission
 
-  // Order in playlist (0-indexed)
-  order     Int
+  // Relation
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
-  @@unique([streamId, order])
-  @@index([streamId])
+  // For tracking online status
+  isOnline Boolean @default(true)
+
+  @@index([roomId])
+  @@index([sessionId])
+  @@index([roomId, isOnline])
 }
 
 model AuditLog {

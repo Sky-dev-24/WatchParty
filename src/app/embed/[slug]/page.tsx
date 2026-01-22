@@ -1,23 +1,24 @@
+/**
+ * Watch Party Embed Page
+ *
+ * Embeddable watch party room (minimal UI, no chat/participant list)
+ */
+
 import { cache } from "react";
 import { notFound } from "next/navigation";
 import prisma from "@/lib/db";
-import SimulatedLivePlayer from "@/components/SimulatedLivePlayer";
+import VideoPlayer from "@/components/VideoPlayer";
 
 // ISR: Regenerate every 60 seconds
 export const revalidate = 60;
 
-const getStream = cache(async (slug: string) => {
+const getRoom = cache(async (slug: string) => {
   try {
-    return await prisma.stream.findUnique({
+    return await prisma.room.findUnique({
       where: { slug },
-      include: {
-        items: {
-          orderBy: { order: "asc" },
-        },
-      },
     });
   } catch (error) {
-    console.error("Failed to fetch stream:", error);
+    console.error("Failed to fetch room:", error);
     return null;
   }
 });
@@ -28,19 +29,19 @@ interface PageProps {
 
 export default async function EmbedPage({ params }: PageProps) {
   const { slug } = await params;
-  const stream = await getStream(slug);
+  const room = await getRoom(slug);
 
-  if (!stream) {
+  if (!room) {
     notFound();
   }
 
-  if (!stream.isActive || stream.items.length === 0) {
+  if (!room.isPublic && !room.isPersistent) {
     return (
-      <div className="w-full h-full bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-xl font-bold mb-2">Stream Unavailable</h1>
+      <div className="w-full h-full min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-center p-8">
+          <h1 className="text-xl font-bold mb-2 text-white">Room Unavailable</h1>
           <p className="text-gray-400 text-sm">
-            This stream is not currently active.
+            This watch party room cannot be embedded.
           </p>
         </div>
       </div>
@@ -48,32 +49,31 @@ export default async function EmbedPage({ params }: PageProps) {
   }
 
   return (
-    <div className="w-full h-full bg-black overflow-hidden">
-      <SimulatedLivePlayer
-        items={stream.items}
-        loopCount={stream.loopCount}
-        scheduledStart={stream.scheduledStart.toISOString()}
-        title={stream.title}
-        syncInterval={stream.syncInterval}
-        driftTolerance={stream.driftTolerance}
-        embedded
-        streamSlug={stream.slug}
-        endedAt={stream.endedAt ? stream.endedAt.toISOString() : null}
-      />
+    <div className="w-full h-full min-h-screen bg-black flex items-center justify-center">
+      <div className="w-full max-w-7xl aspect-video">
+        <VideoPlayer
+          videoType={room.videoType as "youtube" | "plex"}
+          videoId={room.videoId}
+          videoUrl={room.videoUrl}
+        />
+      </div>
+      <div className="absolute bottom-4 left-4 text-white/70 text-sm">
+        {room.name}
+      </div>
     </div>
   );
 }
 
 export async function generateMetadata({ params }: PageProps) {
   const { slug } = await params;
-  const stream = await getStream(slug);
+  const room = await getRoom(slug);
 
-  if (!stream) {
-    return { title: "Stream Not Found" };
+  if (!room) {
+    return { title: "Room Not Found" };
   }
 
   return {
-    title: stream.title,
-    description: `Watch ${stream.title}`,
+    title: `${room.name} - WatchParty`,
+    description: `Watch ${room.name} together`,
   };
 }

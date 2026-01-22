@@ -25,6 +25,10 @@ const EVENT_LABELS: Record<string, { label: string; color: string }> = {
   LOGIN_FAILED: { label: "Login Failed", color: "bg-red-600" },
   LOGIN_RATE_LIMITED: { label: "Rate Limited", color: "bg-yellow-600" },
   LOGOUT: { label: "Logout", color: "bg-gray-600" },
+  ROOM_CREATED: { label: "Room Created", color: "bg-blue-600" },
+  ROOM_UPDATED: { label: "Room Updated", color: "bg-blue-500" },
+  ROOM_DELETED: { label: "Room Deleted", color: "bg-orange-600" },
+  // Legacy events (old simulive platform)
   STREAM_CREATED: { label: "Stream Created", color: "bg-blue-600" },
   STREAM_UPDATED: { label: "Stream Updated", color: "bg-blue-500" },
   STREAM_DELETED: { label: "Stream Deleted", color: "bg-orange-600" },
@@ -139,10 +143,10 @@ export default function AuditLogPage() {
                 <option value="LOGIN_RATE_LIMITED">Rate Limited</option>
                 <option value="LOGOUT">Logout</option>
               </optgroup>
-              <optgroup label="Streams">
-                <option value="STREAM_CREATED">Stream Created</option>
-                <option value="STREAM_UPDATED">Stream Updated</option>
-                <option value="STREAM_DELETED">Stream Deleted</option>
+              <optgroup label="Rooms">
+                <option value="ROOM_CREATED">Room Created</option>
+                <option value="ROOM_UPDATED">Room Updated</option>
+                <option value="ROOM_DELETED">Room Deleted</option>
               </optgroup>
             </select>
           </div>
@@ -198,19 +202,19 @@ export default function AuditLogPage() {
         </div>
         <div className="bg-gray-800 rounded-lg p-4">
           <div className="text-2xl font-bold text-blue-400">
-            {logs.filter(l => l.event === "STREAM_CREATED").length}
+            {logs.filter(l => l.event === "ROOM_CREATED" || l.event === "STREAM_CREATED").length}
           </div>
           <div className="text-sm text-gray-400">Created (page)</div>
         </div>
         <div className="bg-gray-800 rounded-lg p-4">
           <div className="text-2xl font-bold text-cyan-400">
-            {logs.filter(l => l.event === "STREAM_UPDATED").length}
+            {logs.filter(l => l.event === "ROOM_UPDATED" || l.event === "STREAM_UPDATED").length}
           </div>
           <div className="text-sm text-gray-400">Updated (page)</div>
         </div>
         <div className="bg-gray-800 rounded-lg p-4">
           <div className="text-2xl font-bold text-orange-400">
-            {logs.filter(l => l.event === "STREAM_DELETED").length}
+            {logs.filter(l => l.event === "ROOM_DELETED" || l.event === "STREAM_DELETED").length}
           </div>
           <div className="text-sm text-gray-400">Deleted (page)</div>
         </div>

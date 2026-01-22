@@ -21,6 +21,8 @@ export interface VideoPlayerProps {
   // Plex-specific
   plexServerUrl?: string;
   plexToken?: string;
+  plexClientId?: string;
+  plexSessionId?: string;
 }
 
 export interface VideoPlayerHandle {

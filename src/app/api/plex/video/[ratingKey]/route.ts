@@ -17,6 +17,8 @@ export async function GET(
     const searchParams = request.nextUrl.searchParams;
     const serverUrl = searchParams.get("serverUrl");
     const token = searchParams.get("token");
+    const clientId = searchParams.get("clientId") || undefined;
+    const sessionId = searchParams.get("sessionId") || undefined;
 
     if (!serverUrl || !token) {
       return NextResponse.json(
@@ -28,6 +30,8 @@ export async function GET(
     // Generate playback URL
     const url = getVideoPlaybackUrl(serverUrl, token, ratingKey, {
       transcode: true,
+      clientIdentifier: clientId,
+      sessionIdentifier: sessionId,
     });
 
     return NextResponse.json({ url });

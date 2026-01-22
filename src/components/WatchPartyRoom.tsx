@@ -203,6 +203,8 @@ export default function WatchPartyRoom({
                 videoUrl={roomInfo.videoUrl}
                 plexServerUrl={roomInfo.plexServerUrl}
                 plexToken={roomInfo.plexToken}
+                plexClientId={socket.sessionId || undefined}
+                plexSessionId={socket.sessionId || undefined}
                 onReady={handlePlayerReady}
                 onPlay={handlePlayerPlay}
                 onPause={handlePlayerPause}

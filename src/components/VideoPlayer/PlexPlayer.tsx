@@ -22,6 +22,8 @@ const PlexPlayerComponent = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       videoId,
       plexServerUrl,
       plexToken,
+      plexClientId,
+      plexSessionId,
       autoplay = false,
       muted = false,
       onReady,
@@ -55,12 +57,21 @@ const PlexPlayerComponent = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
           // Request transcoded video URL from our API
           // This proxies the Plex request to avoid CORS issues
+          const params = new URLSearchParams({
+            serverUrl: plexServerUrl!,
+            token: plexToken!,
+          });
+
+          if (plexClientId) {
+            params.set("clientId", plexClientId);
+          }
+
+          if (plexSessionId) {
+            params.set("sessionId", plexSessionId);
+          }
+
           const response = await fetch(
-            `/api/plex/video/${encodeURIComponent(videoId)}?` +
-              new URLSearchParams({
-                serverUrl: plexServerUrl!,
-                token: plexToken!,
-              })
+            `/api/plex/video/${encodeURIComponent(videoId)}?${params.toString()}`
           );
 
           if (!response.ok) {
@@ -87,7 +98,7 @@ const PlexPlayerComponent = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       }
 
       fetchPlexVideo();
-    }, [videoId, plexServerUrl, plexToken, onError]);
+    }, [videoId, plexServerUrl, plexToken, plexClientId, plexSessionId, onError]);
 
     // Setup video element event listeners
     useEffect(() => {

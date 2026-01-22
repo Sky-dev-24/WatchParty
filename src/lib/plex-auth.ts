@@ -293,8 +293,15 @@ export function getPlexVideoUrl(
   serverUrl: string,
   authToken: string,
   ratingKey: string,
-  transcode: boolean = true
+  transcode: boolean = true,
+  identifiers?: {
+    clientIdentifier?: string;
+    sessionIdentifier?: string;
+  }
 ): string {
+  const clientIdentifier = identifiers?.clientIdentifier || PLEX_CLIENT_IDENTIFIER;
+  const sessionIdentifier = identifiers?.sessionIdentifier;
+
   if (transcode) {
     // Use universal transcoder
     const params = new URLSearchParams({
@@ -309,13 +316,28 @@ export function getPlexVideoUrl(
       audioBoost: "100",
       location: "lan",
       "X-Plex-Platform": "Chrome",
-      "X-Plex-Client-Identifier": PLEX_CLIENT_IDENTIFIER,
+      "X-Plex-Client-Identifier": clientIdentifier,
       "X-Plex-Token": authToken,
     });
+
+    if (sessionIdentifier) {
+      params.set("X-Plex-Session-Identifier", sessionIdentifier);
+      params.set("session", sessionIdentifier);
+    }
 
     return `${serverUrl}/video/:/transcode/universal/start.m3u8?${params.toString()}`;
   } else {
     // Direct play
-    return `${serverUrl}/library/metadata/${ratingKey}?X-Plex-Token=${authToken}`;
+    const params = new URLSearchParams({
+      "X-Plex-Token": authToken,
+      "X-Plex-Client-Identifier": clientIdentifier,
+    });
+
+    if (sessionIdentifier) {
+      params.set("X-Plex-Session-Identifier", sessionIdentifier);
+      params.set("session", sessionIdentifier);
+    }
+
+    return `${serverUrl}/library/metadata/${ratingKey}?${params.toString()}`;
   }
 }

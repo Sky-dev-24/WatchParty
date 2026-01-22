@@ -82,10 +82,15 @@ export function getVideoPlaybackUrl(
   options: {
     transcode?: boolean;
     quality?: "original" | "1080p" | "720p" | "480p";
+    clientIdentifier?: string;
+    sessionIdentifier?: string;
   } = {}
 ): string {
-  const { transcode = true } = options;
-  return getPlexVideoUrl(serverUrl, authToken, ratingKey, transcode);
+  const { transcode = true, clientIdentifier, sessionIdentifier } = options;
+  return getPlexVideoUrl(serverUrl, authToken, ratingKey, transcode, {
+    clientIdentifier,
+    sessionIdentifier,
+  });
 }
 
 /**

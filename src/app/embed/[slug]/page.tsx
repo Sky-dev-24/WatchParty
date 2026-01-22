@@ -54,7 +54,7 @@ export default async function EmbedPage({ params }: PageProps) {
         <VideoPlayer
           videoType={room.videoType as "youtube" | "plex"}
           videoId={room.videoId}
-          videoUrl={room.videoUrl}
+          videoUrl={room.videoUrl ?? undefined}
         />
       </div>
       <div className="absolute bottom-4 left-4 text-white/70 text-sm">

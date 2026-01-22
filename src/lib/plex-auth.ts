@@ -140,14 +140,10 @@ export async function checkPlexPinStatus(pinId: number): Promise<PlexAuthPin> {
  */
 export function getPlexAuthUrl(pin: PlexAuthPin): string {
   const params = new URLSearchParams({
-    clientID: PLEX_CLIENT_IDENTIFIER,
+    clientID: pin.clientIdentifier || PLEX_CLIENT_IDENTIFIER,
     code: pin.code,
-    context: JSON.stringify({
-      device: {
-        product: PLEX_PRODUCT_NAME,
-        version: PLEX_PRODUCT_VERSION,
-      },
-    }),
+    "context[device][product]": PLEX_PRODUCT_NAME,
+    "context[device][version]": PLEX_PRODUCT_VERSION,
   });
 
   return `https://app.plex.tv/auth#?${params.toString()}`;

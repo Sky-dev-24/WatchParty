@@ -12,10 +12,10 @@ import { getAdminSessionId } from "@/lib/auth";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const libraryId = params.id;
+    const { id: libraryId } = await params;
     const searchParams = request.nextUrl.searchParams;
     const serverUrl = searchParams.get("serverUrl");
 

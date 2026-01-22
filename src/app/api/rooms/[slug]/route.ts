@@ -18,10 +18,11 @@ import { isHost } from "@/lib/participant";
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
-    const room = await getRoomBySlug(params.slug);
+    const { slug } = await params;
+    const room = await getRoomBySlug(slug);
 
     if (!room) {
       return NextResponse.json({ error: "Room not found" }, { status: 404 });
@@ -60,7 +61,7 @@ export async function GET(
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
     const sessionId = await getAdminSessionId(request);
@@ -72,7 +73,8 @@ export async function PATCH(
       );
     }
 
-    const room = await getRoomBySlug(params.slug);
+    const { slug } = await params;
+    const room = await getRoomBySlug(slug);
 
     if (!room) {
       return NextResponse.json({ error: "Room not found" }, { status: 404 });
@@ -122,7 +124,7 @@ export async function PATCH(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
     const sessionId = await getAdminSessionId(request);
@@ -134,7 +136,8 @@ export async function DELETE(
       );
     }
 
-    const room = await getRoomBySlug(params.slug);
+    const { slug } = await params;
+    const room = await getRoomBySlug(slug);
 
     if (!room) {
       return NextResponse.json({ error: "Room not found" }, { status: 404 });

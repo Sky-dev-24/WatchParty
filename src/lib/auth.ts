@@ -12,6 +12,8 @@ import {
 const ADMIN_COOKIE_NAME = "simulive_admin";
 const COOKIE_MAX_AGE = 60 * 60 * 24; // 24 hours
 const SESSION_TOKEN_LENGTH = 32; // 256 bits
+const OPEN_ADMIN_SESSION_ID =
+  "0000000000000000000000000000000000000000000000000000000000000000";
 
 /**
  * Check if admin authentication is required
@@ -152,6 +154,29 @@ export async function isApiAuthenticated(
   if (!adminCookie) return false;
 
   return validateAdminSession(adminCookie.value);
+}
+
+/**
+ * Get the current admin session ID (for API routes).
+ * Returns a stable ID when admin auth is disabled.
+ */
+export async function getAdminSessionId(
+  request: NextRequest
+): Promise<string | null> {
+  if (!isAdminAuthRequired()) {
+    const adminCookie = request.cookies.get(ADMIN_COOKIE_NAME);
+    if (adminCookie?.value) {
+      return adminCookie.value;
+    }
+
+    return OPEN_ADMIN_SESSION_ID;
+  }
+
+  const adminCookie = request.cookies.get(ADMIN_COOKIE_NAME);
+  if (!adminCookie?.value) return null;
+
+  const isValid = await validateAdminSession(adminCookie.value);
+  return isValid ? adminCookie.value : null;
 }
 
 /**

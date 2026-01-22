@@ -10,10 +10,10 @@ import { getVideoPlaybackUrl } from "@/lib/plex";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { ratingKey: string } }
+  { params }: { params: Promise<{ ratingKey: string }> }
 ) {
   try {
-    const ratingKey = params.ratingKey;
+    const { ratingKey } = await params;
     const searchParams = request.nextUrl.searchParams;
     const serverUrl = searchParams.get("serverUrl");
     const token = searchParams.get("token");

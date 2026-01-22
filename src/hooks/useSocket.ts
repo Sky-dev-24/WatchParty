@@ -84,7 +84,7 @@ export function useSocket(options: UseSocketOptions): UseSocketReturn {
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
-    });
+    }) as TypedSocket;
 
     setSocket(newSocket);
 

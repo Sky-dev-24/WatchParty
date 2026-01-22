@@ -52,7 +52,7 @@ export default async function EmbedPage({ params }: PageProps) {
     <div className="w-full h-full min-h-screen bg-black flex items-center justify-center">
       <div className="w-full max-w-7xl aspect-video">
         <VideoPlayer
-          videoType={room.videoType as "youtube" | "plex"}
+          source={room.videoType as "youtube" | "plex"}
           videoId={room.videoId}
           videoUrl={room.videoUrl ?? undefined}
         />
